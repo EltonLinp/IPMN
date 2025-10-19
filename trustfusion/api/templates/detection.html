@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>TrustFusion Real-Time Detection</title>
+    <link rel="stylesheet" href="/static/css/styles.css" />
+    <script src="/static/js/detection.js" defer></script>
+  </head>
+  <body class="page-detection">
+    <nav class="top-nav">
+      <div class="nav-brand">TrustFusion</div>
+      <ul class="nav-links">
+        <li><a class="nav-link" href="/">Test Insights</a></li>
+        <li><a class="nav-link active" href="/detection">Real-Time Detection</a></li>
+      </ul>
+      <div class="nav-actions">
+        <span class="nav-caption">Prototype | Dual-Modal Defense</span>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <h1>Real-Time Detection Prototype</h1>
+      <p>Simulated webcam pipeline illustrating on-device deepfake screening.</p>
+    </header>
+
+    <main class="page detection-layout">
+      <section class="card camera-card">
+        <h2>Live Feed</h2>
+        <div class="mock-indicator">
+          <span class="pulse"></span>
+          <span>Mock stream &mdash; awaiting production models</span>
+        </div>
+        <div class="camera-frame" id="camera-frame">
+          <span>No camera connected.</span>
+        </div>
+      </section>
+
+      <section class="card" id="detection-card">
+        <h2>Detection Metrics</h2>
+        <p>
+          Press the simulator to preview how model signals will surface once the live pipeline is
+          wired to the production detector.
+        </p>
+        <div class="status-grid">
+          <div class="status-card">
+            <h4>Risk Level</h4>
+            <span class="status-value" id="status-risk-level">Idle</span>
+            <p class="status-caption">High watermark from the most recent mock inference.</p>
+          </div>
+          <div class="status-card">
+            <h4>Fake Confidence</h4>
+            <span class="status-value" id="status-confidence">0.00</span>
+            <p class="status-caption">Aggregated dual-modal probability.</p>
+          </div>
+          <div class="status-card">
+            <h4>Signal Alerts</h4>
+            <span class="status-value" id="status-alerts">0</span>
+            <p class="status-caption">Risk signals triggered in the latest frame batch.</p>
+          </div>
+        </div>
+        <div class="control-row">
+          <button id="start-detection">Start Mock Detection</button>
+          <button id="stop-detection" class="secondary hidden">Stop</button>
+        </div>
+        <div class="table-wrapper">
+          <table class="detections-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Risk</th>
+                <th>Fake Confidence</th>
+                <th>Highlights</th>
+              </tr>
+            </thead>
+            <tbody id="detections-body">
+              <tr>
+                <td colspan="4">Simulator idle.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

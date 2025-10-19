@@ -1,0 +1,20 @@
+:: 1)解除PowerShell 激活脚本被策略拦截：
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
+:: 2) 用 3.9 创建本地虚拟环境（名字常用 .venv）
+py -3.9 -m venv .venv
+
+:: 3) 激活（CMD）
+.\.venv\Scripts\activate.bat
+:: 若用 PowerShell：.\.venv\Scripts\Activate.ps1
+
+:: 4) 验证
+python -V
+:: 应显示 Python 3.9.x
+
+:: 5) 安装依赖（示例：装支持 RTX50 的 PyTorch/cu128）
+python -m pip install --upgrade pip
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+
+:: 6) 运行你的脚本
+uvicorn trustfusion.api.server:app --reload

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>TrustFusion Deepfake Monitoring</title>
+    <link rel="stylesheet" href="/static/css/styles.css" />
+    <script src="/static/js/dashboard.js" defer></script>
+  </head>
+  <body>
+    <nav class="top-nav">
+      <div class="nav-brand">TrustFusion</div>
+      <ul class="nav-links">
+        <li><a class="nav-link active" href="/">Test Insights</a></li>
+        <li><a class="nav-link" href="/detection">Real-Time Detection</a></li>
+      </ul>
+      <div class="nav-actions">
+        <span class="nav-caption">Prototype | Dual-Modal Defense</span>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <h1>TrustFusion Dual-Modal Deepfake Defense</h1>
+      <p>Financial-grade prototype for secure remote identity verification</p>
+    </header>
+
+    <div id="mock-banner" class="banner hidden">
+      <div class="banner-primary">
+        <span class="badge">Mock Data</span>
+        <p id="mock-banner-message">
+          Sample evaluation results are displayed while backend services are offline.
+        </p>
+      </div>
+      <div class="banner-meta">
+        <strong>Last updated:</strong>
+        <span id="mock-banner-updated">N/A</span>
+      </div>
+    </div>
+
+    <main class="page">
+      <section class="card" id="dataset-card">
+        <h2>Test Set Overview (Celeb-DF v2)</h2>
+        <p><strong>Root:</strong> <span id="dataset-root">{{ summary.root_dir }}</span></p>
+        <div class="summary-grid single-column">
+          <div>
+            <span class="value" id="dataset-total">{{ summary.total }}</span>
+            <span class="label">Total Clips</span>
+          </div>
+          <div>
+            <span class="value" id="dataset-real">{{ summary.real }}</span>
+            <span class="label">Labelled Real</span>
+          </div>
+          <div>
+            <span class="value" id="dataset-fake">{{ summary.fake }}</span>
+            <span class="label">Labelled Fake</span>
+          </div>
+          <div>
+            <span class="value" id="dataset-unknown">{{ summary.unknown }}</span>
+            <span class="label">Unlabelled</span>
+          </div>
+        </div>
+        <button id="refresh-summary">Refresh Counts</button>
+      </section>
+
+      <section class="card" id="sample-card">
+        <h2>Sample Explorer</h2>
+        <p>Select a video to inspect detailed scores.</p>
+        <select id="sample-select">
+          <option value="">Select a sample...</option>
+        </select>
+        <div id="sample-details" class="hidden">
+          <h3>Sample Details</h3>
+          <p><strong>Video:</strong> <span id="sample-path"></span></p>
+          <p><strong>Folder:</strong> <span id="sample-group"></span></p>
+          <p><strong>Combined Fake Probability:</strong> <span id="sample-prob"></span></p>
+          <p><strong>Video Fake Probability:</strong> <span id="sample-prob-video"></span></p>
+          <p><strong>Audio Fake Probability:</strong> <span id="sample-prob-audio"></span></p>
+          <p><strong>Sync Fake Probability:</strong> <span id="sample-prob-sync"></span></p>
+          <p><strong>Predicted Label:</strong> <span id="sample-pred"></span></p>
+          <p><strong>Ground Truth:</strong> <span id="sample-gt"></span></p>
+          <p><strong>Risk Level:</strong> <span id="sample-risk"></span></p>
+        </div>
+      </section>
+
+      <section class="card" id="evaluation-card">
+        <h2>Run Offline Evaluation</h2>
+        <p>Classify the test set with the current model and review predicted fake rate plus sample records.</p>
+        <button id="run-evaluation">Start Evaluation</button>
+        <div id="evaluation-progress" class="hidden">
+          <div class="progress-bar">
+            <div class="progress-bar-fill" id="evaluation-progress-fill"></div>
+          </div>
+          <p class="progress-text" id="evaluation-progress-text">Waiting to start...</p>
+        </div>
+        <div id="evaluation-result" class="hidden">
+          <h3 class="section-subtitle">Execution Snapshot</h3>
+          <div class="meta-row">
+            <div class="meta-item">
+              <span class="meta-label">Run ID</span>
+              <span class="meta-value" id="eval-run-id">N/A</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Model Version</span>
+              <span class="meta-value" id="eval-model-version">N/A</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Processed Clips</span>
+              <span class="meta-value" id="eval-limit">N/A</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Per-Folder Limit</span>
+              <span class="meta-value" id="eval-group-limit">N/A</span>
+            </div>
+          </div>
+
+          <h3 class="section-subtitle">Prediction Counts</h3>
+          <div class="summary-grid wrap">
+            <div><span class="value" id="eval-total">0</span><span class="label">Evaluated</span></div>
+            <div><span class="value" id="eval-pred-fake">0</span><span class="label">Predicted Fake</span></div>
+            <div><span class="value" id="eval-pred-real">0</span><span class="label">Predicted Real</span></div>
+            <div><span class="value" id="eval-risk-high">0</span><span class="label">High Risk</span></div>
+            <div><span class="value" id="eval-risk-medium">0</span><span class="label">Medium Risk</span></div>
+            <div><span class="value" id="eval-risk-low">0</span><span class="label">Low Risk</span></div>
+          </div>
+
+          <h3 class="section-subtitle">Performance Metrics</h3>
+          <div class="summary-grid metrics-grid">
+            <div>
+              <span class="label">Accuracy (labelled only)</span>
+              <span class="value" id="eval-accuracy">N/A</span>
+            </div>
+            <div>
+              <span class="label">Fake Rate</span>
+              <span class="value" id="eval-fake-rate">N/A</span>
+            </div>
+            <div>
+              <span class="label">Decision Threshold</span>
+              <span class="value" id="eval-threshold">0.50</span>
+            </div>
+            <div>
+              <span class="label">AUC</span>
+              <span class="value" id="eval-auc">N/A</span>
+            </div>
+            <div>
+              <span class="label">Balanced Accuracy</span>
+              <span class="value" id="eval-balanced-acc">N/A</span>
+            </div>
+            <div>
+              <span class="label">False Negative Rate</span>
+              <span class="value" id="eval-fnr">N/A</span>
+            </div>
+          </div>
+          <p class="distribution">
+            <strong>Label Distribution:</strong>
+            Real <span id="eval-gt-real">0</span> |
+            Fake <span id="eval-gt-fake">0</span> |
+            Unlabelled <span id="eval-gt-unknown">0</span>
+          </p>
+
+          <h4 class="section-subtitle">Modality Accuracy</h4>
+          <div class="summary-grid wrap">
+            <div>
+              <span class="value" id="eval-modal-acc-video-real">0%</span>
+              <span class="label">Video Acc (Real)</span>
+            </div>
+            <div>
+              <span class="value" id="eval-modal-acc-video-fake">0%</span>
+              <span class="label">Video Acc (Fake)</span>
+            </div>
+            <div>
+              <span class="value" id="eval-modal-acc-audio-real">0%</span>
+              <span class="label">Audio Acc (Real)</span>
+            </div>
+            <div>
+              <span class="value" id="eval-modal-acc-audio-fake">0%</span>
+              <span class="label">Audio Acc (Fake)</span>
+            </div>
+            <div>
+              <span class="value" id="eval-modal-acc-sync-real">0%</span>
+              <span class="label">Sync Acc (Real)</span>
+            </div>
+            <div>
+              <span class="value" id="eval-modal-acc-sync-fake">0%</span>
+              <span class="label">Sync Acc (Fake)</span>
+            </div>
+          </div>
+          <h4>Per-Folder Sampling Overview</h4>
+          <div class="table-wrapper">
+            <table id="eval-group-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Folder</th>
+                  <th>Selected</th>
+                  <th>Available</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h4>Fake Source Metrics</h4>
+          <div class="table-wrapper">
+            <table id="eval-fake-source-table">
+              <thead>
+                <tr>
+                  <th>Source</th>
+                  <th>Count</th>
+                  <th>AUC</th>
+                  <th>TPR</th>
+                  <th>FNR</th>
+                  <th>FPR</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h4>Real Source Metrics</h4>
+          <div class="table-wrapper">
+            <table id="eval-real-source-table">
+              <thead>
+                <tr>
+                  <th>Source</th>
+                  <th>Count</th>
+                  <th>FPR</th>
+                  <th>TNR</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h4>Sample Predictions</h4>
+          <div class="table-wrapper">
+            <table id="eval-table">
+              <thead>
+                <tr>
+                  <th>Video</th>
+                  <th>Folder</th>
+                  <th>Video Prob</th>
+                  <th>Audio Prob</th>
+                  <th>Sync Prob</th>
+                  <th>Combined Prob</th>
+                  <th>Predicted Label</th>
+                  <th>Ground Truth</th>
+                  <th>Risk</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="pagination hidden" id="eval-pagination">
+            <button id="page-prev">Prev</button>
+            <span id="page-info">Page 1 / 1</span>
+            <button id="page-next">Next</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
