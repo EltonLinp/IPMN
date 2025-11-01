@@ -1,0 +1,14 @@
+# Install the torch stack (torch, torchvision, torchaudio) separately via the CUDA wheel command.
+# python -m pip install --upgrade pip
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+# The packages below prefer GPU-enabled wheels when available. Adjust to match your CUDA runtime.
+numpy>=1.26
+pandas>=2.1
+tqdm>=4.66
+decord>=0.6.0
+opencv-python>=4.8
+insightface>=0.7.3
+onnxruntime-gpu>=1.16
+moviepy>=1.0.3
+imageio-ffmpeg>=0.4.9
+transformers>=4.38

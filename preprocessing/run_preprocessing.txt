@@ -1,0 +1,1 @@
+python preprocessing/fakeav_preprocessor.py --dataset-root FakeAVCeleb_v1.2 --output-root processed\fakeav_subset --speakers 15 --real-per-speaker 4 --fake-per-speaker 4 --skip-existing
