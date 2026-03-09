@@ -111,12 +111,13 @@ class FakeAVMultimodalDataset(Dataset[Dict[str, torch.Tensor]]):
         pad = target - frames
         pad_before = pad // 2
         pad_after = pad - pad_before
-        padded = F.pad(
-            video.permute(1, 2, 3, 0),
-            (pad_before, pad_after),
-            mode="replicate",
-        ).permute(3, 0, 1, 2)
-        return padded
+        pieces = []
+        if pad_before > 0:
+            pieces.append(video[:1].expand(pad_before, -1, -1, -1))
+        pieces.append(video)
+        if pad_after > 0:
+            pieces.append(video[-1:].expand(pad_after, -1, -1, -1))
+        return torch.cat(pieces, dim=0)
 
     def _pad_crop_audio(self, mel: torch.Tensor) -> torch.Tensor:
         target = self.config.target_steps

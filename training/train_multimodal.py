@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+import json
 from typing import Dict, List
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -92,7 +93,14 @@ def build_dataloaders(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train multimodal FakeAVCeleb classifier.")
+    config_parser = argparse.ArgumentParser(add_help=False)
+    config_parser.add_argument("--config", type=Path, help="Path to JSON config file.")
+    config_args, remaining = config_parser.parse_known_args()
+
+    parser = argparse.ArgumentParser(
+        description="Train multimodal FakeAVCeleb classifier.",
+        parents=[config_parser],
+    )
     parser.add_argument("--data-dir", type=Path, required=True, help="Processed dataset root.")
     parser.add_argument("--vit-path", type=Path, required=True, help="Path to frozen ViT weights for sync module.")
     parser.add_argument("--index-file", type=Path, default=None, help="Optional preprocess_index.jsonl path.")
@@ -110,7 +118,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--spectral-weight", type=float, default=0.0, help="Aux loss weight for spectral reconstruction.")
     parser.add_argument("--rppg-weight", type=float, default=0.0, help="Aux loss weight for rPPG regularisation.")
     parser.add_argument("--save-path", type=Path, default=Path("multimodal_model.pt"))
-    return parser.parse_args()
+
+    if config_args.config:
+        with config_args.config.open("r", encoding="utf-8") as handle:
+            config = json.load(handle)
+        cfg_cli: List[str] = []
+        for key, value in config.items():
+            if value is None:
+                continue
+            option = f"--{key.replace('_', '-')}"
+            if isinstance(value, bool):
+                if value:
+                    cfg_cli.append(option)
+            elif isinstance(value, list):
+                cfg_cli.append(option)
+                cfg_cli.extend(str(v) for v in value)
+            else:
+                cfg_cli.extend([option, str(value)])
+        remaining = cfg_cli + remaining
+
+    args = parser.parse_args(remaining)
+    return args
 
 
 def compute_losses(
@@ -132,8 +160,22 @@ def compute_losses(
         sync_target = torch.ones_like(labels)
         losses["sync"] = nn.functional.cross_entropy(outputs["sync_logits"], sync_target) * args.sync_weight
     if args.spectral_weight > 0.0:
-        spectral_target = batch["audio"].mean(dim=1)
-        losses["spectral"] = nn.functional.l1_loss(outputs["spectral"], spectral_target) * args.spectral_weight
+        spectral_output = outputs.get("spectral")
+        if spectral_output is not None:
+            if spectral_output.dim() == 3:
+                seg_labels = labels.unsqueeze(1).expand(-1, spectral_output.size(1))
+                losses["spectral"] = (
+                    nn.functional.cross_entropy(
+                        spectral_output.reshape(-1, spectral_output.size(-1)),
+                        seg_labels.reshape(-1),
+                    )
+                    * args.spectral_weight
+                )
+            else:
+                spectral_target = batch["audio"].mean(dim=1)
+                losses["spectral"] = (
+                    nn.functional.l1_loss(spectral_output, spectral_target) * args.spectral_weight
+                )
     if args.rppg_weight > 0.0:
         losses["rppg"] = torch.mean(outputs["rppg"] ** 2) * args.rppg_weight
 

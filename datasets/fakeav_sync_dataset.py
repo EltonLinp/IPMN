@@ -15,19 +15,15 @@ from .fakeav_video_dataset import DatasetSplit, _read_index
 @dataclass
 class SyncDatasetConfig:
     negative_prob: float = 0.5
-    target_frames: Optional[int] = None  # If set, clip/pad frames to this length
+    target_frames: Optional[int] = None
+    min_roll_ratio: float = 0.3
+    max_roll_ratio: float = 0.85
+    swap_prob: float = 0.8
+    force_cross_speaker: bool = True
+    paired_negatives: bool = False
 
 
 class FakeAVSyncDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, int, int]]):
-    """
-    Dataset returning (video_frames, audio_sequence, sync_label, deepfake_label).
-
-    - video_frames: [T, 3, 224, 224] in range [-1, 1]
-    - audio_sequence: [T, 64] after temporal resampling of Mel features
-    - sync_label: 1 for aligned audio/video, 0 for misaligned audio (roll)
-    - deepfake_label: original sample label (0 real, 1 fake)
-    """
-
     def __init__(
         self,
         data_dir: str | Path,
@@ -38,6 +34,7 @@ class FakeAVSyncDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, int, int]]):
         seed: int = 1337,
         config: SyncDatasetConfig | None = None,
         return_metadata: bool = False,
+        metadata_fields: Optional[Sequence[str]] = None,
     ) -> None:
         self.data_dir = Path(data_dir)
         if not self.data_dir.exists():
@@ -61,7 +58,18 @@ class FakeAVSyncDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, int, int]]):
         self.seed = seed
         self.config = config or SyncDatasetConfig()
         self.return_metadata = return_metadata
-        self.files = self._apply_split(files, split)
+        self.metadata_fields = metadata_fields
+
+        self.base_files = self._apply_split(files, split)
+        if not self.base_files:
+            raise RuntimeError("No samples selected for this split.")
+
+        self.file_speakers: Dict[Path, str] = {}
+        self.speaker_to_files: Dict[str, List[Path]] = {}
+        for path in self.base_files:
+            speaker = path.stem.split("_")[0]
+            self.file_speakers[path] = speaker
+            self.speaker_to_files.setdefault(speaker, []).append(path)
 
     def _apply_split(self, files: Sequence[Path], split: Optional[str]) -> List[Path]:
         if split not in {None, "train", "val", "test"}:
@@ -99,11 +107,33 @@ class FakeAVSyncDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, int, int]]):
         return selected
 
     def __len__(self) -> int:
-        return len(self.files)
+        return len(self.base_files) * 2 if self.config.paired_negatives else len(self.base_files)
 
     @staticmethod
     def _load_bundle(path: Path) -> Dict[str, object]:
         return torch.load(path, map_location="cpu")
+
+    @staticmethod
+    def _prepare_mel_sequence(mel: torch.Tensor, target_len: int) -> torch.Tensor:
+        if mel.dim() == 3:
+            mel = mel.squeeze(0)
+        mel = mel.float()
+        if target_len <= 1:
+            return mel.permute(1, 0)
+        mel_steps = mel.shape[-1]
+        if mel_steps <= 1:
+            return mel.permute(1, 0).repeat(target_len, 1)
+        resized = (
+            F.interpolate(
+                mel.unsqueeze(0),
+                size=target_len,
+                mode="linear",
+                align_corners=False,
+            )
+            .squeeze(0)
+            .permute(1, 0)
+        )
+        return resized
 
     def _maybe_trim_frames(self, video: torch.Tensor) -> torch.Tensor:
         target = self.config.target_frames
@@ -123,51 +153,111 @@ class FakeAVSyncDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, int, int]]):
         return pad_tensor
 
     def __getitem__(self, index: int):
-        path = self.files[index]
+        if self.config.paired_negatives:
+            base_idx = index // 2
+            force_negative = (index % 2) == 1
+        else:
+            base_idx = index
+            force_negative = False
+
+        path = self.base_files[base_idx]
         bundle = self._load_bundle(path)
-        video: torch.Tensor = bundle["video"]  # [T, 3, 224, 224]
-        video = video.float()
-        video = self._maybe_trim_frames(video)
+        video: torch.Tensor = bundle["video"]
+        video = self._maybe_trim_frames(video.float())
 
         audio = bundle.get("audio", {})
-        mel: Optional[torch.Tensor] = None
-        if isinstance(audio, dict):
-            mel = audio.get("mel")
-        if mel is None:
+        mel = audio.get("mel") if isinstance(audio, dict) else None
+        if not isinstance(mel, torch.Tensor):
             raise RuntimeError(f"No mel spectrogram found in {path}")
-        if mel.dim() == 3:
-            mel = mel.squeeze(0)
-        mel = mel.float()  # [64, S]
 
-        sync = bundle.get("sync", {})
         frame_count = video.shape[0]
-        mel_steps = mel.shape[-1]
-        if mel_steps <= 1:
-            mel_seq = mel.permute(1, 0).repeat(frame_count, 1)
-        else:
-            mel_seq = F.interpolate(
-                mel.unsqueeze(0),
-                size=frame_count,
-                mode="linear",
-                align_corners=False,
-            ).squeeze(0).permute(1, 0)  # [T, 64]
+        mel_seq = self._prepare_mel_sequence(mel, frame_count)
 
-        rng = random.Random(self.seed + index)
-        mismatch = False
-        if frame_count > 1 and self.config.negative_prob > 0:
-            mismatch = rng.random() < self.config.negative_prob
-        if mismatch:
-            shift = rng.randint(1, frame_count - 1)
-            mel_seq = mel_seq.roll(shifts=shift, dims=0)
+        speaker_id = self.file_speakers[path]
+        rng = random.Random(self.seed * 9973 + base_idx * 131 + (1 if force_negative else 0))
+        make_negative = force_negative
+        if not make_negative and self.config.negative_prob > 0.0:
+            make_negative = rng.random() < self.config.negative_prob
+
+        if make_negative:
+            mel_seq = self._make_negative(
+                mel_seq,
+                frame_count=frame_count,
+                rng=rng,
+                source_path=path,
+                speaker_id=speaker_id,
+            )
             sync_label = 0
         else:
             sync_label = 1
 
         deepfake_label = int(bundle.get("label", 0))
         if self.return_metadata:
-            metadata = {
-                "path": str(path),
-                "sync": sync,
-            }
+            metadata: Dict[str, object] = {}
+            fields = set(self.metadata_fields or ())
+            if not fields or "path" in fields:
+                metadata["path"] = str(path)
+            if not fields or "speaker_id" in fields:
+                metadata["speaker_id"] = speaker_id
             return video, mel_seq, sync_label, deepfake_label, metadata
         return video, mel_seq, sync_label, deepfake_label
+
+    def _sample_roll_shift(self, frame_count: int, rng: random.Random) -> int:
+        if frame_count <= 1:
+            return 0
+        min_ratio = max(float(self.config.min_roll_ratio), 0.0)
+        max_ratio = max(float(self.config.max_roll_ratio), min_ratio)
+        min_shift = max(int(round(min_ratio * frame_count)), 1)
+        max_shift = max(int(round(max_ratio * frame_count)), min_shift)
+        max_shift = min(max_shift, frame_count - 1)
+        if max_shift < 1:
+            return 1
+        return rng.randint(min_shift, max_shift)
+
+    def _sample_swap_sequence(
+        self,
+        target_len: int,
+        rng: random.Random,
+        exclude_path: Path,
+        speaker_id: str,
+    ) -> Optional[torch.Tensor]:
+        if len(self.base_files) <= 1:
+            return None
+        require_diff = self.config.force_cross_speaker and len(self.speaker_to_files) > 1
+        for _ in range(10):
+            if require_diff:
+                candidates = [sp for sp in self.speaker_to_files if sp != speaker_id]
+                if not candidates:
+                    require_diff = False
+                    continue
+                speaker_choice = rng.choice(candidates)
+                pool = self.speaker_to_files.get(speaker_choice, [])
+                if not pool:
+                    continue
+                candidate_path = rng.choice(pool)
+            else:
+                candidate_path = rng.choice(self.base_files)
+            if candidate_path == exclude_path:
+                continue
+            bundle = self._load_bundle(candidate_path)
+            audio = bundle.get("audio", {})
+            mel = audio.get("mel") if isinstance(audio, dict) else None
+            if isinstance(mel, torch.Tensor):
+                return self._prepare_mel_sequence(mel, target_len)
+        return None
+
+    def _make_negative(
+        self,
+        mel_seq: torch.Tensor,
+        *,
+        frame_count: int,
+        rng: random.Random,
+        source_path: Path,
+        speaker_id: str,
+    ) -> torch.Tensor:
+        if self.config.swap_prob > 0.0 and rng.random() < self.config.swap_prob:
+            swapped = self._sample_swap_sequence(frame_count, rng, source_path, speaker_id)
+            if swapped is not None:
+                return swapped
+        shift = self._sample_roll_shift(frame_count, rng)
+        return mel_seq.roll(shifts=shift, dims=0)

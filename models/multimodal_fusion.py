@@ -4,9 +4,10 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .video_backbone import VideoClassifier
-from .audio_backbone import AudioClassifier
+from .aasist_lite import AASISTLite
 from .sync_module import SyncModule
 
 
@@ -20,8 +21,8 @@ class MultimodalFusionModel(nn.Module):
     ) -> None:
         super().__init__()
         self.video_branch = VideoClassifier(num_classes=num_classes)
-        self.audio_branch = AudioClassifier(num_classes=num_classes)
-        self.sync_branch = SyncModule(vit_path=vit_path)
+        self.audio_branch = AASISTLite(num_classes=num_classes)
+        self.sync_branch = SyncModule(vit_path=vit_path, audio_dim=self.audio_branch.mel_bins)
 
         self.video_proj = nn.Sequential(
             nn.Linear(self.video_branch.feature_dim, fusion_dim),
@@ -59,10 +60,28 @@ class MultimodalFusionModel(nn.Module):
         audio: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         v_logits, v_rppg, v_feat = self.video_branch(video)
-        a_logits, a_spec, a_feat = self.audio_branch(audio)
+        audio_seq = audio
+        if audio_seq.dim() == 4:
+            if audio_seq.size(1) == 1:
+                audio_seq = audio_seq.squeeze(1).transpose(1, 2)  # [B, T, mel]
+            else:
+                audio_seq = audio_seq.transpose(1, 3).squeeze(3)
+        elif audio_seq.dim() == 3 and audio_seq.size(1) == self.audio_branch.mel_bins:
+            audio_seq = audio_seq.transpose(1, 2)
+
+        if audio_seq.size(-1) != self.audio_branch.mel_bins:
+            audio_seq = F.interpolate(
+                audio_seq.transpose(1, 2).unsqueeze(1),
+                size=(self.audio_branch.mel_bins, audio_seq.size(1)),
+                mode="bilinear",
+                align_corners=False,
+            ).squeeze(1).transpose(1, 2)
+
+        audio_input = audio_seq.transpose(1, 2).unsqueeze(1)
+        a_logits, a_segments, a_feat = self.audio_branch(audio_input)
         joint_state, sync_logits = self.sync_branch(
             video.permute(0, 2, 1, 3, 4),
-            audio,
+            audio_seq,
         )
 
         v_proj = self.video_proj(v_feat)
@@ -80,6 +99,7 @@ class MultimodalFusionModel(nn.Module):
             "audio_logits": a_logits,
             "sync_logits": sync_logits,
             "rppg": v_rppg,
-            "spectral": a_spec,
+            "spectral": a_segments,
+            "segment_logits": a_segments,
             "joint_state": pooled,
         }

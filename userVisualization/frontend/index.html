@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multi-Modal Deepfake Detection</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Tri-Modal Detector</p>
+          <h1>Multi-Modal Deepfake Detection</h1>
+          <p class="subtitle">
+            Upload a short local clip (with audio). The service extracts audio / visual / audio-visual sync features and a fused prediction to expose deepfake evidence in three modalities plus the final verdict.
+          </p>
+        </div>
+        <div class="status-pill" id="status-pill">Waiting for upload</div>
+      </header>
+
+      <section class="capture-panel info-camera-row">
+        <div class="info-box">
+          <div class="info-header">
+            <div>
+              <p class="eyebrow">User</p>
+              <h2>Contact details</h2>
+            </div>
+          </div>
+          <div class="field-grid">
+            <label class="field">
+              <span>Name</span>
+              <input id="user-name" type="text" placeholder="Full name" autocomplete="name" />
+            </label>
+            <label class="field">
+              <span>Phone</span>
+              <input id="user-phone" type="tel" placeholder="Phone number" autocomplete="tel" />
+            </label>
+          </div>
+          <div class="id-photo-row">
+            <div class="id-photo-label">
+              <p class="eyebrow">ID Photo</p>
+              <p class="hint">Upload a clear identity photo (JPG/PNG).</p>
+            </div>
+            <input id="id-photo-input" type="file" accept="image/*" hidden />
+            <div class="id-photo-actions">
+              <button id="id-photo-btn" class="secondary-btn" type="button">Choose ID Photo</button>
+              <span class="file-chip" id="id-photo-chip" hidden>No ID photo selected</span>
+            </div>
+          </div>
+          <div class="id-photo-row">
+            <div class="id-photo-label">
+              <p class="eyebrow">Selfie</p>
+              <p class="hint">Upload a selfie photo (JPG/PNG).</p>
+            </div>
+            <input id="selfieInput" type="file" accept="image/*" hidden />
+            <div class="id-photo-actions">
+              <button id="selfieBtn" class="secondary-btn" type="button">Choose Selfie</button>
+              <span class="file-chip" id="selfieChip" hidden>No selfie selected</span>
+            </div>
+            <img
+              id="selfiePreview"
+              alt="Selfie preview"
+              hidden
+              style="width: 100%; max-height: 220px; object-fit: cover; border-radius: 14px; background: #e5e7eb;"
+            />
+          </div>
+          <p class="hint">Name, phone, and ID photo are required for the upload record.</p>
+        </div>
+        <div class="camera-box">
+          <div class="camera-header">
+            <div>
+              <p class="eyebrow">Webcam</p>
+              <h2>Record a clip</h2>
+            </div>
+            <span class="camera-status" id="camera-status">Camera idle</span>
+          </div>
+          <div class="camera-preview">
+            <video id="camera-preview" playsinline muted></video>
+            <div class="camera-timer" id="camera-timer">00:00</div>
+          </div>
+          <div class="camera-actions">
+            <button id="camera-start-btn" class="primary-btn" type="button">Start recording</button>
+            <button id="camera-stop-btn" class="secondary-btn" type="button" disabled>Stop</button>
+            <button id="camera-reset-btn" class="secondary-btn" type="button" disabled>Reset</button>
+          </div>
+          <p class="hint">Recording is stored locally and reused for analysis once saved.</p>
+        </div>
+      </section>
+
+      <section class="capture-panel upload-panel">
+        <div class="upload-box" id="upload-box">
+          <input type="file" id="video-input" accept="video/*" hidden />
+          <div class="upload-icon">&#8682;</div>
+          <p class="upload-title">Drop or click to pick a video file</p>
+          <p class="upload-subtitle">Suggested duration 5-15 seconds - MP4 / WEBM / MOV supported</p>
+          <div class="file-chip" id="file-chip" hidden>No file selected</div>
+          <div class="upload-actions">
+            <button id="choose-btn" class="secondary-btn" type="button">Choose File</button>
+            <button id="analyze-btn" class="primary-btn" type="button" disabled>Run Evaluation</button>
+          </div>
+          <p class="hint">Inference stays on this machine - nothing is uploaded elsewhere.</p>
+          <p class="error" id="error-message" role="alert" hidden></p>
+        </div>
+      </section>
+
+      <section class="results-panel">
+        <div class="results-header">
+          <div>
+            <p class="eyebrow">Analysis</p>
+            <h2>Modal Alerts &amp; Fusion Verdict</h2>
+          </div>
+          <div class="summary-chip" id="summary-chip">Awaiting analysis</div>
+        </div>
+        <p class="results-note">
+          Each modality card reflects a standalone branch and is for reference only. The fusion score combines all evidence and represents the final decision.
+        </p>
+        <div class="viz-row">
+          <article class="chart-card" id="fusion-card">
+            <div class="chart-header">
+              <p class="eyebrow">Fusion Confidence</p>
+              <h3>Final Verdict Gauge</h3>
+            </div>
+            <div class="gauge-wrapper">
+              <canvas id="fusion-gauge" aria-label="Fusion gauge chart"></canvas>
+              <div class="gauge-center" id="gauge-center">
+                <p class="gauge-label" id="gauge-label">Awaiting</p>
+                <p class="gauge-score" id="gauge-score">--%</p>
+              </div>
+            </div>
+            <p class="chart-caption">Relative fake vs real probability from the fusion branch.</p>
+          </article>
+          <article class="chart-card">
+            <div class="chart-header">
+              <p class="eyebrow">Modality Contrast</p>
+              <h3>Fake vs Real</h3>
+            </div>
+            <div id="contrast-bars" class="bar-group">
+              <div class="bar-row" data-bar-key="audio">
+                <span class="bar-label">Audio</span>
+                <div class="bar-track">
+                  <div class="bar-segment real"></div>
+                  <div class="bar-segment fake"></div>
+                  <div class="bar-threshold"></div>
+                </div>
+                <div class="bar-values">
+                  <span data-real-value>Real --%</span>
+                  <span data-fake-value>Fake --%</span>
+                </div>
+              </div>
+              <div class="bar-row" data-bar-key="video">
+                <span class="bar-label">Video</span>
+                <div class="bar-track">
+                  <div class="bar-segment real"></div>
+                  <div class="bar-segment fake"></div>
+                  <div class="bar-threshold"></div>
+                </div>
+                <div class="bar-values">
+                  <span data-real-value>Real --%</span>
+                  <span data-fake-value>Fake --%</span>
+                </div>
+              </div>
+              <div class="bar-row" data-bar-key="sync">
+                <span class="bar-label">Synchronization</span>
+                <div class="bar-track">
+                  <div class="bar-segment real"></div>
+                  <div class="bar-segment fake"></div>
+                  <div class="bar-threshold"></div>
+                </div>
+                <div class="bar-values">
+                  <span data-real-value>Real --%</span>
+                  <span data-fake-value>Fake --%</span>
+                </div>
+              </div>
+            </div>
+            <p class="chart-caption">Shows how each branch leans toward real or fake; the dashed line marks 50%.</p>
+          </article>
+        </div>
+        <div class="grid" id="result-grid">
+          <article class="metric-card" data-key="final">
+            <h3>Fusion Verdict</h3>
+            <p class="metric-label" data-role="label">--</p>
+            <p class="metric-score" data-role="score">--</p>
+            <p class="metric-detail" data-role="detail">Waiting for analysis</p>
+          </article>
+          <article class="metric-card" data-key="audio">
+            <h3>Audio Branch</h3>
+            <p class="metric-label" data-role="label">--</p>
+            <p class="metric-score" data-role="score">--</p>
+            <p class="metric-detail" data-role="detail">Waiting for analysis</p>
+          </article>
+          <article class="metric-card" data-key="video">
+            <h3>Video Branch</h3>
+            <p class="metric-label" data-role="label">--</p>
+            <p class="metric-score" data-role="score">--</p>
+            <p class="metric-detail" data-role="detail">Waiting for analysis</p>
+          </article>
+          <article class="metric-card" data-key="sync">
+            <h3>Synchronization Branch</h3>
+            <p class="metric-label" data-role="label">--</p>
+            <p class="metric-score" data-role="score">--</p>
+            <p class="metric-detail" data-role="detail">Waiting for analysis</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="results-panel" id="ekyc-panel">
+        <div class="results-header">
+          <div>
+            <p class="eyebrow">eKYC</p>
+            <h2>Evaluation Results</h2>
+          </div>
+          <div class="summary-chip" id="ekycDecisionChip">Pending</div>
+        </div>
+        <p class="results-note">
+          Upload ID, selfie, and a short video clip to run the unified eKYC evaluation.
+        </p>
+        <p class="error" id="ekycError" role="alert" hidden></p>
+        <div class="grid">
+          <article class="metric-card image-card">
+            <h3>Uploaded Video</h3>
+            <video
+              id="ekycVideoPlayer"
+              controls
+              playsinline
+              style="width: 100%; border-radius: 14px; background: #e5e7eb;"
+            ></video>
+            <p class="hint" id="ekycVideoHint">Awaiting upload</p>
+          </article>
+          <article class="metric-card image-card">
+            <h3>ID Face</h3>
+            <img id="ekycIdFaceImg" alt="ID face" />
+            <p class="hint" id="ekycIdFaceHint">No image yet</p>
+          </article>
+          <article class="metric-card image-card">
+            <h3>Selfie Face</h3>
+            <img id="ekycSelfieFaceImg" alt="Selfie face" />
+            <p class="hint" id="ekycSelfieFaceHint">No image yet</p>
+          </article>
+          <article class="metric-card image-card">
+            <h3>Video Best Frame</h3>
+            <img id="ekycVideoFrameImg" alt="Video best frame" />
+            <p class="hint" id="ekycVideoFrameHint">No image yet</p>
+          </article>
+        </div>
+        <div class="grid" style="margin-top: 1rem;">
+          <article class="metric-card">
+            <h3>Deepfake Score</h3>
+            <p class="metric-score" id="scoreDeepfake">--</p>
+            <div class="bar-track">
+              <div class="bar-segment fake" id="scoreDeepfakeBar"></div>
+            </div>
+            <p class="metric-detail">Fake probability from model</p>
+          </article>
+          <article class="metric-card">
+            <h3>ID vs Selfie</h3>
+            <p class="metric-score" id="scoreIdSelfie">--</p>
+            <div class="bar-track">
+              <div class="bar-segment real" id="scoreIdSelfieBar"></div>
+            </div>
+            <p class="metric-detail">Cosine similarity</p>
+          </article>
+          <article class="metric-card">
+            <h3>ID vs Video</h3>
+            <p class="metric-score" id="scoreIdVideo">--</p>
+            <div class="bar-track">
+              <div class="bar-segment real" id="scoreIdVideoBar"></div>
+            </div>
+            <p class="metric-detail">Cosine similarity</p>
+          </article>
+        </div>
+        <article class="metric-card" style="margin-top: 1rem;">
+          <h3>Decision</h3>
+          <p class="metric-label" id="ekycDecision">--</p>
+          <ul id="ekycReasons"></ul>
+        </article>
+        <article class="metric-card explainability-card" style="margin-top: 1rem;">
+          <h3>Deepfake Explainability</h3>
+          <div class="explain-row">
+            <p class="explain-label">Decision reason codes</p>
+            <div class="badge-list" id="ekycDecisionReasonCodes">
+              <span class="ekyc-badge muted">None</span>
+            </div>
+          </div>
+          <div class="explain-row">
+            <p class="explain-label">Deepfake quality flags</p>
+            <div class="badge-list" id="ekycQualityFlags">
+              <span class="ekyc-badge muted">None</span>
+            </div>
+          </div>
+          <div class="explain-row">
+            <p class="explain-label">Sync quality</p>
+            <div class="sync-quality-grid">
+              <div class="sync-quality-item">
+                <span>mismatch</span>
+                <span class="bool-badge unknown" id="ekycSyncMismatch">N/A</span>
+              </div>
+              <div class="sync-quality-item">
+                <span>interpolated</span>
+                <span class="bool-badge unknown" id="ekycSyncInterpolated">N/A</span>
+              </div>
+              <div class="sync-quality-item">
+                <span>length_bad</span>
+                <span class="bool-badge unknown" id="ekycSyncLengthBad">N/A</span>
+              </div>
+            </div>
+          </div>
+          <div class="explain-row">
+            <p class="explain-label">Branch fake scores</p>
+            <div class="branch-score-grid">
+              <div class="branch-score-item">
+                <span>audio_fake</span>
+                <strong id="ekycAudioFake">N/A</strong>
+              </div>
+              <div class="branch-score-item">
+                <span>video_fake</span>
+                <strong id="ekycVideoFake">N/A</strong>
+              </div>
+              <div class="branch-score-item">
+                <span>sync_fake</span>
+                <strong id="ekycSyncFake">N/A</strong>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <div class="backdrop" id="loading-backdrop" hidden>
+      <div class="loader">
+        <span class="spinner"></span>
+        <p>Running inference, please wait...</p>
+      </div>
+    </div>
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>

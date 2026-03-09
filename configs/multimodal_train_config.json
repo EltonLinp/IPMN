@@ -1,0 +1,19 @@
+{
+  "data_dir": "O:/processed/fakeav_audio_full",
+  "index_file": "O:/processed/fakeav_audio_full/preprocess_index.jsonl",
+  "vit_path": "E:/CUHK/Industrial_Project/vit_model",
+  "epochs": 20,
+  "batch_size": 4,
+  "lr": 2e-4,
+  "weight_decay": 0.0001,
+  "num_workers": 4,
+  "device": "cuda",
+  "target_frames": 32,
+  "target_steps": 400,
+  "video_weight": 0.0,
+  "audio_weight": 0.0,
+  "sync_weight": 0.0,
+  "spectral_weight": 0.0,
+  "rppg_weight": 0.0,
+  "save_path": "multimodal_model.pt"
+}

@@ -1,0 +1,18 @@
+{
+  "dataset_root": "FakeAVCeleb_v1.2",
+  "output_root": "autodl-tmp/Industrial_Project/aotodl-tmp/fakeav_audio_full",
+  "speakers": null,
+  "real_per_speaker": 9999,
+  "fake_per_speaker": 9999,
+  "seed": 1337,
+  "save_waveform": true,
+  "skip_existing": false,
+  "num_frames": 32,
+  "frame_size": [
+    224,
+    224
+  ],
+  "sample_strategy": "uniform",
+  "use_face_detector": false,
+  "full_dataset": true
+}

@@ -9,6 +9,7 @@ decord>=0.6.0
 opencv-python>=4.8
 insightface>=0.7.3
 onnxruntime-gpu>=1.16
+pillow>=10.0.0
 moviepy>=1.0.3
 imageio-ffmpeg>=0.4.9
 transformers>=4.38

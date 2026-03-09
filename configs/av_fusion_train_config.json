@@ -1,0 +1,18 @@
+{
+  "data_dir": "/root/autodl-tmp/Industrial_Project/fakeav_audio_full",
+  "index_file": "/root/autodl-tmp/Industrial_Project/fakeav_audio_full/preprocess_index.jsonl",
+  "audio_ckpt": "wavlm_audio_sync.pt",
+  "video_ckpt": "video_model.pt",
+  "save_path": "av_fusion.pt",
+  "epochs": 15,
+  "batch_size": 32,
+  "num_workers": 4,
+  "lr": 5e-4,
+  "weight_decay": 0.0005,
+  "target_steps": 400,
+  "video_frames": 32,
+  "device": "cuda",
+  "patience": 4,
+  "eval_every": 1,
+  "audio_only": false
+}

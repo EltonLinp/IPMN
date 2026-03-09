@@ -1,6 +1,94 @@
-.venv
-vit_model
-Idea
-FakeAVCeleb_v1.2
-FinTech Industrial Project Progress Check Form (Midterm).docx
-processed
+# =========================
+# Keep this repo code-only
+# =========================
+
+# Python cache/build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.nox/
+.tox/
+build/
+dist/
+site/
+*.egg-info/
+.eggs/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE / OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local env / secrets / temp
+.env
+.env.*
+*.local
+*.log
+*_log.txt
+*.tmp
+*.pid
+env.ps1
+temp_patch.txt
+
+# Model weights / checkpoints / inference binaries
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.h5
+*.pb
+*.msgpack
+*.bin
+weights/
+checkpoints/
+**/weights/
+**/checkpoints/
+
+# Media / dataset files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.wav
+*.flac
+*.mp3
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.zip
+*.npz
+*.npy
+*.mat
+*.pdf
+*.docx
+
+# Project runtime outputs
+outputs/
+res/
+processed/
+userVisualization/storage/
+
+# Large local datasets / snapshots
+FakeAVCeleb_v1.2/
+vit_model/
+term2/
+
+# Third-party source snapshots (optional; keep off GitHub by default)
+aasist-main/
+PlotNeuralNet-master/

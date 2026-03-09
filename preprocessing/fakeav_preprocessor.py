@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import random
+import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -70,6 +73,13 @@ class VideoResult:
     frame_indices: torch.Tensor
     timestamps: torch.Tensor
     fps: float
+    total_frames: Optional[int] = None
+    duration_sec: Optional[float] = None
+    face_crop_requested: bool = False
+    face_detector: Optional[str] = None
+    face_detector_ready: Optional[bool] = None
+    face_detected_frames: Optional[int] = None
+    center_crop_frames: Optional[int] = None
 
 
 @dataclass
@@ -88,6 +98,7 @@ class PipelineConfig:
     dataset_root: Path
     output_root: Path
     metadata_csv: str = "meta_data.csv"
+    full_dataset: bool = False
     speakers: Optional[int] = 15
     real_per_speaker: int = 4
     fake_per_speaker: int = 4
@@ -225,7 +236,7 @@ class VideoProcessor:
             raise ValueError(f"Unsupported frame sampling strategy: {self.settings.sample_strategy}")
         return indices
 
-    def _read_frames_decord(self, video_path: Path) -> Tuple[np.ndarray, np.ndarray, float, np.ndarray]:
+    def _read_frames_decord(self, video_path: Path) -> Tuple[np.ndarray, np.ndarray, float, np.ndarray, Optional[int]]:
         use_gpu = self.settings.use_cuda and torch.cuda.is_available()
         ctx = decord.gpu(0) if use_gpu else decord.cpu(0)
         try:
@@ -240,7 +251,7 @@ class VideoProcessor:
         total = len(reader)
         indices = self._select_indices(total)
         if indices.size == 0:
-            return np.empty((0, 0, 0, 3), dtype=np.uint8), indices, fps, np.empty(0, dtype=np.float32)
+            return np.empty((0, 0, 0, 3), dtype=np.uint8), indices, fps, np.empty(0, dtype=np.float32), int(total)
         frames = reader.get_batch(indices).asnumpy()
         timestamps = []
         for idx in indices:
@@ -249,9 +260,9 @@ class VideoProcessor:
                 timestamps.append(float(start))
             except Exception:
                 timestamps.append(float(idx) / fps if fps > 0 else float(idx) / 25.0)
-        return frames, indices, fps, np.array(timestamps, dtype=np.float32)
+        return frames, indices, fps, np.array(timestamps, dtype=np.float32), int(total)
 
-    def _read_frames_opencv(self, video_path: Path) -> Tuple[np.ndarray, np.ndarray, float, np.ndarray]:
+    def _read_frames_opencv(self, video_path: Path) -> Tuple[np.ndarray, np.ndarray, float, np.ndarray, Optional[int]]:
         capture = cv2.VideoCapture(str(video_path))
         if not capture.isOpened():
             raise RuntimeError(f"Failed to open video: {video_path}")
@@ -260,7 +271,7 @@ class VideoProcessor:
         indices = self._select_indices(total if total > 0 else self.settings.num_frames)
         if indices.size == 0:
             capture.release()
-            return np.empty((0, 0, 0, 3), dtype=np.uint8), indices, fps, np.empty(0, dtype=np.float32)
+            return np.empty((0, 0, 0, 3), dtype=np.uint8), indices, fps, np.empty(0, dtype=np.float32), (int(total) if total > 0 else None)
         frames: List[np.ndarray] = []
         collected_indices: List[int] = []
         target_set = set(indices.tolist())
@@ -281,7 +292,7 @@ class VideoProcessor:
         if fps <= 0:
             fps = 25.0
         timestamps = collected.astype(np.float32) / fps
-        return np.stack(frames, axis=0), collected, fps, timestamps
+        return np.stack(frames, axis=0), collected, fps, timestamps, (int(total) if total > 0 else None)
 
     def _center_crop(self, frame: np.ndarray) -> np.ndarray:
         h, w = frame.shape[:2]
@@ -303,16 +314,24 @@ class VideoProcessor:
 
     def __call__(self, video_path: Path) -> VideoResult:
         if self._backend == "decord":
-            frames_np, indices, fps, timestamps_np = self._read_frames_decord(video_path)
+            frames_np, indices, fps, timestamps_np, total_frames = self._read_frames_decord(video_path)
         else:
-            frames_np, indices, fps, timestamps_np = self._read_frames_opencv(video_path)
+            frames_np, indices, fps, timestamps_np, total_frames = self._read_frames_opencv(video_path)
         if frames_np.size == 0:
             raise RuntimeError(f"No frames extracted from {video_path}")
         if fps <= 0:
             fps = 25.0
         processed: List[torch.Tensor] = []
+        face_detected_frames = 0
+        face_crop_requested = self._face_cropper is not None
+        face_detector = self.settings.face_detector if face_crop_requested else None
+        face_detector_ready = bool(
+            face_crop_requested and getattr(self._face_cropper, "_detector", None) is not None
+        )
         for frame in frames_np:
             crop = self._face_cropper(frame) if self._face_cropper else None
+            if crop is not None:
+                face_detected_frames += 1
             region = crop if crop is not None else self._center_crop(frame)
             processed.append(self._frame_to_tensor(region))
         stacked = torch.stack(processed)
@@ -320,11 +339,25 @@ class VideoProcessor:
             raise RuntimeError(f"Only {stacked.shape[0]} frames extracted from {video_path}")
         frame_indices = torch.from_numpy(indices.astype(np.int64))
         timestamps = torch.from_numpy(timestamps_np.astype(np.float32))
+        sampled_count = int(stacked.shape[0])
+        center_crop_frames = sampled_count - int(face_detected_frames) if face_crop_requested else sampled_count
+        duration_sec: Optional[float] = None
+        if total_frames is not None and total_frames > 0 and fps > 0:
+            duration_sec = float(total_frames) / float(fps)
+        elif timestamps.numel() > 0:
+            duration_sec = float(timestamps.max().item())
         return VideoResult(
             frames=stacked,
             frame_indices=frame_indices,
             timestamps=timestamps,
             fps=fps,
+            total_frames=total_frames,
+            duration_sec=duration_sec,
+            face_crop_requested=face_crop_requested,
+            face_detector=face_detector,
+            face_detector_ready=face_detector_ready if face_crop_requested else None,
+            face_detected_frames=int(face_detected_frames) if face_crop_requested else None,
+            center_crop_frames=int(center_crop_frames) if face_crop_requested else None,
         )
 
 
@@ -357,6 +390,11 @@ class AudioProcessor:
             try:
                 waveform, sr = self._load_with_torchaudio(media_path)
             except Exception as load_err:
+                try:
+                    waveform, sr = self._load_audio_ffmpeg_cli(media_path)
+                    return waveform, sr
+                except Exception as ffmpeg_err:
+                    logging.debug("ffmpeg CLI failed (%s); falling back to moviepy if available.", ffmpeg_err)
                 if _MOVIEPY_AVAILABLE:
                     logging.debug("torchaudio failed (%s); falling back to moviepy.", load_err)
                     return self._load_audio_moviepy(media_path)
@@ -391,6 +429,34 @@ class AudioProcessor:
                 "torchaudio.load requires torchcodec. Install torchcodec or FFmpeg."
             ) from codec_err
         return waveform, sr
+
+    def _load_audio_ffmpeg_cli(self, media_path: Path) -> Tuple[torch.Tensor, int]:
+        ffmpeg_exe = shutil.which('ffmpeg')
+        if not ffmpeg_exe:
+            raise RuntimeError('ffmpeg binary not found in PATH.')
+        cmd = [
+            ffmpeg_exe,
+            '-hide_banner',
+            '-loglevel', 'error',
+            '-i', str(media_path),
+            '-f', 's16le',
+            '-ac', '1',
+            '-ar', str(self.settings.sample_rate),
+            '-'
+        ]
+        try:
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        except subprocess.CalledProcessError as exc:
+            error_msg = exc.stderr.decode(errors='ignore') if exc.stderr else 'unknown'
+            raise RuntimeError(f'ffmpeg failed to decode audio for {media_path}: {error_msg}') from exc
+        if not proc.stdout:
+            stderr_msg = proc.stderr.decode(errors='ignore') if proc.stderr else 'empty output'
+            raise RuntimeError(f'ffmpeg produced no audio data for {media_path}: {stderr_msg}')
+        audio_np = np.frombuffer(proc.stdout, dtype=np.int16).astype(np.float32) / 32768.0
+        if audio_np.size == 0:
+            raise RuntimeError(f'ffmpeg returned empty buffer for {media_path}.')
+        waveform = torch.from_numpy(audio_np).unsqueeze(0)
+        return waveform, self.settings.sample_rate
 
     def _load_audio_moviepy(self, media_path: Path) -> Tuple[torch.Tensor, int]:
         if not _MOVIEPY_AVAILABLE:
@@ -479,12 +545,29 @@ class FakeAVPreprocessor:
     def _select_samples(self, df: pd.DataFrame) -> List[SampleEntry]:
         samples: List[SampleEntry] = []
         grouped = df.groupby("speaker_id")
+        if self.config.full_dataset:
+            for _, row in df.iterrows():
+                label = int(row["label"])
+                tag = "real" if label == 0 else "fake"
+                sample_id = f"{row['speaker_id']}_{tag}_{Path(row['path']).stem}"
+                samples.append(
+                    SampleEntry(
+                        speaker_id=row["speaker_id"],
+                        sample_id=sample_id,
+                        media_path=Path(row["full_path"]),
+                        label=label,
+                        type_name=row["type"],
+                        meta={k: row[k] for k in ("method", "category", "race", "gender")},
+                    )
+                )
+            return samples
         eligible_speakers: List[str] = []
         for speaker, group in grouped:
             real_count = int((group["label"] == 0).sum())
             fake_count = int((group["label"] == 1).sum())
-            if real_count > 0 and fake_count > 0:
-                eligible_speakers.append(speaker)
+            if real_count == 0 and fake_count == 0:
+                continue
+            eligible_speakers.append(speaker)
         requested = self.config.speakers if (self.config.speakers and self.config.speakers > 0) else len(eligible_speakers)
         if len(eligible_speakers) < requested:
             logging.warning(
@@ -504,8 +587,6 @@ class FakeAVPreprocessor:
             fake_rows = group[group["label"] == 1]
             real_target = min(len(real_rows), self.config.real_per_speaker)
             fake_target = min(len(fake_rows), self.config.fake_per_speaker)
-            if real_target == 0 or fake_target == 0:
-                continue
             for row in self._sample_rows(real_rows, real_target):
                 sample_id = f"{row['speaker_id']}_real_{Path(row['path']).stem}"
                 samples.append(
@@ -652,6 +733,7 @@ def build_default_config(
     dataset_root: str | Path,
     output_root: str | Path,
     *,
+    full_dataset: bool = False,
     speakers: int | None = 15,
     real_per_speaker: int = 4,
     fake_per_speaker: int = 4,
@@ -661,6 +743,7 @@ def build_default_config(
     return PipelineConfig(
         dataset_root=Path(dataset_root),
         output_root=Path(output_root),
+        full_dataset=full_dataset,
         speakers=speakers,
         real_per_speaker=real_per_speaker,
         fake_per_speaker=fake_per_speaker,
@@ -668,12 +751,22 @@ def build_default_config(
     )
 
 
-def main() -> None:
-    import argparse
+def parse_args() -> argparse.Namespace:
+    config_parser = argparse.ArgumentParser(add_help=False)
+    config_parser.add_argument("--config", type=Path, help="Path to JSON config file.")
+    config_args, remaining = config_parser.parse_known_args()
 
-    parser = argparse.ArgumentParser(description="FakeAVCeleb preprocessing pipeline")
+    parser = argparse.ArgumentParser(
+        description="FakeAVCeleb preprocessing pipeline",
+        parents=[config_parser],
+    )
     parser.add_argument("--dataset-root", type=Path, required=True, help="Path to FakeAVCeleb_v1.2 directory.")
     parser.add_argument("--output-root", type=Path, required=True, help="Directory to save processed tensors.")
+    parser.add_argument(
+        "--full-dataset",
+        action="store_true",
+        help="Process every available sample without speaker balancing.",
+    )
     parser.add_argument("--speakers", type=int, default=15, help="Number of speaker IDs to sample (<=0 to use all).")
     parser.add_argument("--real-per-speaker", type=int, default=4, help="Real samples per speaker.")
     parser.add_argument("--fake-per-speaker", type=int, default=4, help="Fake samples per speaker.")
@@ -684,7 +777,31 @@ def main() -> None:
     parser.add_argument("--sample-strategy", type=str, default="uniform", choices=("uniform", "random"))
     parser.add_argument("--save-waveform", action="store_true", help="Store raw audio waveform alongside features.")
     parser.add_argument("--skip-existing", action="store_true", default=False, help="Skip already processed samples.")
-    args = parser.parse_args()
+
+    if config_args.config:
+        with config_args.config.open("r", encoding="utf-8") as handle:
+            config = json.load(handle)
+        cfg_cli: List[str] = []
+        for key, value in config.items():
+            if value is None:
+                continue
+            option = f"--{key.replace('_', '-')}"
+            if isinstance(value, bool):
+                if value:
+                    cfg_cli.append(option)
+            elif isinstance(value, list):
+                cfg_cli.append(option)
+                cfg_cli.extend(str(v) for v in value)
+            else:
+                cfg_cli.extend([option, str(value)])
+        remaining = cfg_cli + remaining
+
+    args = parser.parse_args(remaining)
+    return args
+
+
+def main() -> None:
+    args = parse_args()
 
     video_settings = VideoSettings(
         num_frames=args.num_frames,
@@ -697,6 +814,7 @@ def main() -> None:
     config = PipelineConfig(
         dataset_root=args.dataset_root,
         output_root=args.output_root,
+        full_dataset=args.full_dataset,
         speakers=speaker_count,
         real_per_speaker=args.real_per_speaker,
         fake_per_speaker=args.fake_per_speaker,

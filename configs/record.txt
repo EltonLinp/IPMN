@@ -1,0 +1,178 @@
+# None
+Epoch 1: val_loss=0.4432, val_mcc=0.1968, TP=1502, FP=4, TN=46, FN=656
+Saved new best model to aasist_lite_audio.pt
+Epoch 2: val_loss=0.4818, val_mcc=0.1897, TP=1439, FP=3, TN=47, FN=719
+Epoch 3: val_loss=0.3839, val_mcc=0.2177, TP=1613, FP=5, TN=45, FN=545
+Saved new best model to aasist_lite_audio.pt
+Epoch 4: val_loss=0.4022, val_mcc=0.2169, TP=1610, FP=5, TN=45, FN=548
+Epoch 5: val_loss=0.4631, val_mcc=0.2312, TP=1614, FP=3, TN=47, FN=544
+Saved new best model to aasist_lite_audio.pt
+Epoch 6: val_loss=0.4266, val_mcc=0.2361, TP=1608, FP=2, TN=48, FN=550                                                                                              
+Saved new best model to aasist_lite_audio.pt
+Epoch 7: val_loss=0.4569, val_mcc=0.2268, TP=1598, FP=3, TN=47, FN=560                                                                                              
+Epoch 8: val_loss=0.5159, val_mcc=0.2287, TP=1530, FP=0, TN=50, FN=628
+Epoch 9: val_loss=0.3860, val_mcc=0.2339, TP=1576, FP=1, TN=49, FN=582
+Epoch 10: val_loss=0.5849, val_mcc=0.2341, TP=1601, FP=2, TN=48, FN=557
+Epoch 11: val_loss=0.4786, val_mcc=0.2157, TP=1630, FP=6, TN=44, FN=528
+Epoch 12: val_loss=0.3934, val_mcc=0.2306, TP=1658, FP=5, TN=45, FN=500
+Early stopping triggered after 12 epochs (no val MCC improvement for 6 epochs).
+Train loss=0.3450, mcc=0.7345, TP=6357, FP=209, TN=8356, FN=2254
+Val loss=0.4266, mcc=0.2361, TP=1608, FP=2, TN=48, FN=550
+Test loss=0.4812, mcc=0.2301, TP=1512, FP=0, TN=50, FN=620
+
+# All 48000
+Waveform length stats (samples -> seconds @ 16000Hz): min=15360(0.96s), median=67989(4.25s), p90=111828(6.99s), max=243712(15.23s)
+Epoch 1: val_loss=0.5293, val_mcc=0.1218, TP=1223, FP=8, TN=42, FN=935
+Saved new best model to aasist_lite_audio.pt
+Epoch 2: val_loss=0.6358, val_mcc=0.1470, TP=1109, FP=1, TN=49, FN=1049                                                                                             
+Saved new best model to aasist_lite_audio.pt
+Epoch 3: val_loss=0.5504, val_mcc=0.1438, TP=1426, FP=10, TN=40, FN=732
+Epoch 4: val_loss=0.4279, val_mcc=0.1429, TP=1454, FP=11, TN=39, FN=704
+Epoch 5: val_loss=0.4199, val_mcc=0.2063, TP=1644, FP=8, TN=42, FN=514
+Saved new best model to aasist_lite_audio.pt
+Epoch 6: val_loss=0.4600, val_mcc=0.2235, TP=1634, FP=5, TN=45, FN=524
+Saved new best model to aasist_lite_audio.pt
+Epoch 7: val_loss=0.4399, val_mcc=0.2187, TP=1515, FP=1, TN=49, FN=643
+Epoch 8: val_loss=0.3114, val_mcc=0.2333, TP=1667, FP=5, TN=45, FN=491
+Saved new best model to aasist_lite_audio.pt
+Epoch 9: val_loss=0.6670, val_mcc=0.2206, TP=1549, FP=2, TN=48, FN=609
+Epoch 10: val_loss=0.4477, val_mcc=0.2369, TP=1611, FP=2, TN=48, FN=547
+Saved new best model to aasist_lite_audio.pt
+Epoch 11: val_loss=0.5199, val_mcc=0.2361, TP=1608, FP=2, TN=48, FN=550
+Epoch 12: val_loss=0.3999, val_mcc=0.2392, TP=1619, FP=2, TN=48, FN=539
+Saved new best model to aasist_lite_audio.pt
+Epoch 13: val_loss=0.4092, val_mcc=0.2493, TP=1631, FP=1, TN=49, FN=527
+Saved new best model to aasist_lite_audio.pt
+Epoch 14: val_loss=0.4751, val_mcc=0.2352, TP=1581, FP=1, TN=49, FN=577
+Epoch 15: val_loss=0.5869, val_mcc=0.2218, TP=1528, FP=1, TN=49, FN=630
+Epoch 16: val_loss=0.4791, val_mcc=0.2374, TP=1680, FP=5, TN=45, FN=478
+Epoch 17: val_loss=0.6258, val_mcc=0.2358, TP=1607, FP=2, TN=48, FN=551
+Epoch 18: val_loss=0.5673, val_mcc=0.2341, TP=1601, FP=2, TN=48, FN=557
+Epoch 19: val_loss=0.4852, val_mcc=0.2410, TP=1648, FP=3, TN=47, FN=510
+Early stopping triggered after 19 epochs (no val MCC improvement for 6 epochs).
+Train loss=0.3446, mcc=0.7322, TP=6524, FP=330, TN=8214, FN=2108
+Val loss=0.4092, mcc=0.2493, TP=1631, FP=1, TN=49, FN=527
+Test loss=0.4493, mcc=0.2314, TP=1567, FP=2, TN=48, FN=565
+
+# 64000
+Waveform length stats (samples -> seconds @ 16000Hz): min=30094(1.88s), median=76162(4.76s), p90=117464(7.34s), max=153600(9.60s)
+Epoch 1: val_loss=0.5261, val_mcc=0.1138, TP=1249, FP=10, TN=40, FN=909
+Saved new best model to aasist_lite_audio.pt
+Epoch 2: val_loss=0.4557, val_mcc=0.1394, TP=1333, FP=8, TN=42, FN=825                                                                                              
+Saved new best model to aasist_lite_audio.pt
+Epoch 3: val_loss=0.5348, val_mcc=0.1471, TP=1270, FP=5, TN=45, FN=888                                                                                              
+Saved new best model to aasist_lite_audio.pt
+Epoch 4: val_loss=0.4116, val_mcc=0.1382, TP=1462, FP=12, TN=38, FN=696                                                                                             
+Epoch 5: val_loss=0.4502, val_mcc=0.1668, TP=1351, FP=4, TN=46, FN=807
+Saved new best model to aasist_lite_audio.pt
+Epoch 6: val_loss=0.4199, val_mcc=0.1488, TP=1420, FP=9, TN=41, FN=738                                                                                              
+Epoch 7: val_loss=0.3614, val_mcc=0.1649, TP=1587, FP=12, TN=38, FN=571
+Epoch 8: val_loss=0.2888, val_mcc=0.1780, TP=1843, FP=21, TN=29, FN=315
+Saved new best model to aasist_lite_audio.pt
+Epoch 9: val_loss=0.3147, val_mcc=0.1898, TP=1813, FP=18, TN=32, FN=345                                                                                             
+Saved new best model to aasist_lite_audio.pt
+Epoch 10: val_loss=0.2384, val_mcc=0.1816, TP=1871, FP=22, TN=28, FN=287                                                                                            
+Epoch 11: val_loss=0.2626, val_mcc=0.1812, TP=1870, FP=22, TN=28, FN=288
+Epoch 12: val_loss=0.3349, val_mcc=0.1942, TP=1763, FP=15, TN=35, FN=395
+Saved new best model to aasist_lite_audio.pt
+Epoch 13: val_loss=0.2833, val_mcc=0.2073, TP=1873, FP=19, TN=31, FN=285                                                                                            
+Saved new best model to aasist_lite_audio.pt
+Epoch 14: val_loss=0.2543, val_mcc=0.2156, TP=1838, FP=16, TN=34, FN=320                                                                                            
+Saved new best model to aasist_lite_audio.pt
+Epoch 15: val_loss=0.2862, val_mcc=0.2185, TP=1808, FP=14, TN=36, FN=350                                                                                            
+Saved new best model to aasist_lite_audio.pt
+Epoch 16: val_loss=0.2343, val_mcc=0.1775, TP=1899, FP=24, TN=26, FN=259                                                                                            
+Epoch 17: val_loss=0.2956, val_mcc=0.2328, TP=1749, FP=9, TN=41, FN=409
+Saved new best model to aasist_lite_audio.pt
+Epoch 18: val_loss=0.3632, val_mcc=0.2246, TP=1766, FP=11, TN=39, FN=392                                                                                            
+Epoch 19: val_loss=0.3233, val_mcc=0.2195, TP=1772, FP=12, TN=38, FN=386
+Epoch 20: val_loss=0.3080, val_mcc=0.2200, TP=1830, FP=15, TN=35, FN=328
+Epoch 21: val_loss=0.2683, val_mcc=0.2308, TP=1801, FP=12, TN=38, FN=357
+Epoch 22: val_loss=0.3011, val_mcc=0.2276, TP=1774, FP=11, TN=39, FN=384
+Epoch 23: val_loss=0.4820, val_mcc=0.2322, TP=1727, FP=8, TN=42, FN=431
+Early stopping triggered after 23 epochs (no val MCC improvement for 6 epochs).
+Train loss=0.5060, mcc=0.5765, TP=6930, FP=1990, TN=6605, FN=1651
+Val loss=0.2956, mcc=0.2328, TP=1749, FP=9, TN=41, FN=409
+Test loss=0.3211, mcc=0.2074, TP=1670, FP=10, TN=40, FN=462
+
+# 96000
+Waveform length stats (samples -> seconds @ 16000Hz): min=15360(0.96s), median=75776(4.74s), p90=104448(6.53s), max=182272(11.39s)
+Epoch 1: val_loss=0.4815, val_mcc=0.1519, TP=1335, FP=6, TN=44, FN=823
+Saved new best model to aasist_lite_audio.pt
+Epoch 2: val_loss=0.4793, val_mcc=0.1490, TP=1318, FP=6, TN=44, FN=840                                                                                              
+Epoch 3: val_loss=0.7165, val_mcc=0.1477, TP=1114, FP=1, TN=49, FN=1044
+Epoch 4: val_loss=0.3861, val_mcc=0.1349, TP=1445, FP=12, TN=38, FN=713
+Epoch 5: val_loss=0.4799, val_mcc=0.2221, TP=1555, FP=2, TN=48, FN=603
+Saved new best model to aasist_lite_audio.pt
+Epoch 6: val_loss=0.3651, val_mcc=0.2207, TP=1624, FP=5, TN=45, FN=534
+Epoch 7: val_loss=0.5361, val_mcc=0.2037, TP=1417, FP=0, TN=50, FN=741
+Epoch 8: val_loss=0.3742, val_mcc=0.2107, TP=1636, FP=7, TN=43, FN=522
+Epoch 9: val_loss=0.4546, val_mcc=0.2154, TP=1554, FP=3, TN=47, FN=604
+Epoch 10: val_loss=0.4459, val_mcc=0.2290, TP=1582, FP=2, TN=48, FN=576
+Saved new best model to aasist_lite_audio.pt
+Epoch 11: val_loss=0.4906, val_mcc=0.2170, TP=1586, FP=4, TN=46, FN=572                                                                                             
+Epoch 12: val_loss=0.4027, val_mcc=0.2273, TP=1624, FP=4, TN=46, FN=534
+Epoch 13: val_loss=0.4362, val_mcc=0.2354, TP=1629, FP=3, TN=47, FN=529
+Saved new best model to aasist_lite_audio.pt
+Epoch 14: val_loss=0.5619, val_mcc=0.2169, TP=1534, FP=2, TN=48, FN=624
+Epoch 15: val_loss=0.5467, val_mcc=0.2287, TP=1605, FP=3, TN=47, FN=553
+Epoch 16: val_loss=0.4436, val_mcc=0.2310, TP=1565, FP=1, TN=49, FN=593
+Epoch 17: val_loss=0.3940, val_mcc=0.2317, TP=1592, FP=2, TN=48, FN=566
+Epoch 18: val_loss=0.5290, val_mcc=0.2330, TP=1597, FP=2, TN=48, FN=561
+Epoch 19: val_loss=0.4485, val_mcc=0.2377, TP=1614, FP=2, TN=48, FN=544
+Saved new best model to aasist_lite_audio.pt
+Epoch 20: val_loss=0.5535, val_mcc=0.2407, TP=1647, FP=3, TN=47, FN=511                                                                                             
+Saved new best model to aasist_lite_audio.pt
+Epoch 21: val_loss=0.5546, val_mcc=0.2314, TP=1541, FP=0, TN=50, FN=617                                                                                             
+Epoch 22: val_loss=0.4373, val_mcc=0.2389, TP=1663, FP=4, TN=46, FN=495
+Epoch 23: val_loss=0.5210, val_mcc=0.2481, TP=1604, FP=0, TN=50, FN=554
+Saved new best model to aasist_lite_audio.pt
+Epoch 24: val_loss=0.3516, val_mcc=0.2368, TP=1720, FP=7, TN=43, FN=438                                                                                             
+Epoch 25: val_loss=0.5058, val_mcc=0.2423, TP=1674, FP=4, TN=46, FN=484
+Epoch 26: val_loss=0.5149, val_mcc=0.2372, TP=1612, FP=2, TN=48, FN=546
+Epoch 27: val_loss=0.4500, val_mcc=0.2485, TP=1693, FP=4, TN=46, FN=465
+Saved new best model to aasist_lite_audio.pt
+Epoch 28: val_loss=0.6269, val_mcc=0.2398, TP=1598, FP=1, TN=49, FN=560
+Epoch 29: val_loss=0.5979, val_mcc=0.2392, TP=1664, FP=4, TN=46, FN=494
+Epoch 30: val_loss=0.4207, val_mcc=0.2246, TP=1746, FP=10, TN=40, FN=412
+Epoch 31: val_loss=0.5410, val_mcc=0.2493, TP=1631, FP=1, TN=49, FN=527
+Saved new best model to aasist_lite_audio.pt
+Epoch 32: val_loss=0.4677, val_mcc=0.2403, TP=1730, FP=7, TN=43, FN=428                                                                                             
+Epoch 33: val_loss=0.5099, val_mcc=0.2518, TP=1661, FP=2, TN=48, FN=497
+Saved new best model to aasist_lite_audio.pt
+Epoch 34: val_loss=0.4835, val_mcc=0.2479, TP=1691, FP=4, TN=46, FN=467                                                                                             
+Epoch 35: val_loss=0.4813, val_mcc=0.2514, TP=1681, FP=3, TN=47, FN=477
+Epoch 36: val_loss=0.4640, val_mcc=0.2389, TP=1726, FP=7, TN=43, FN=432
+Train loss=0.3248, mcc=0.7699, TP=6438, FP=75, TN=8583, FN=2080
+Val loss=0.5099, mcc=0.2518, TP=1661, FP=2, TN=48, FN=497
+Test loss=0.5726, mcc=0.2349, TP=1603, FP=3, TN=47, FN=529
+
+# wave_branch_mode="real_only"，wave_segment_samples=64000
+Waveform length stats (samples -> seconds @ 16000Hz): min=35295(2.21s), median=75776(4.74s), p90=112640(7.04s), max=197632(12.35s)
+Epoch 1: val_loss=0.0028, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Saved new best model to aasist_lite_audio.pt
+Epoch 2: val_loss=0.0001, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Epoch 3: val_loss=0.0001, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Epoch 4: val_loss=0.0000, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Epoch 5: val_loss=0.0000, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Epoch 6: val_loss=0.0001, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Epoch 7: val_loss=0.0001, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Early stopping triggered after 7 epochs (no val MCC improvement for 6 epochs).
+Train loss=0.0057, mcc=0.9981, TP=8494, FP=16, TN=8666, FN=0
+Val loss=0.0028, mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Test loss=0.0029, mcc=1.0000, TP=2132, FP=0, TN=50, FN=0
+
+# wave_branch_mode="fake_only"，wave_segment_samples=64000
+Waveform length stats (samples -> seconds @ 16000Hz): min=30094(1.88s), median=75776(4.74s), p90=117760(7.36s), max=211968(13.25s)
+Epoch 1: val_loss=0.0000, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Saved new best model to aasist_lite_audio.pt
+Epoch 2: val_loss=0.0000, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0                                                                                                
+Epoch 3: val_loss=0.0000, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Epoch 4: val_loss=0.0000, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Epoch 5: val_loss=0.0000, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Epoch 6: val_loss=0.0000, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Epoch 7: val_loss=0.0000, val_mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Early stopping triggered after 7 epochs (no val MCC improvement for 6 epochs).
+Train loss=0.0000, mcc=1.0000, TP=8551, FP=0, TN=8625, FN=0
+Val loss=0.0000, mcc=1.0000, TP=2158, FP=0, TN=50, FN=0
+Test loss=0.0059, mcc=0.9899, TP=2131, FP=0, TN=50, FN=1
