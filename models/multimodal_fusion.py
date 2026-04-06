@@ -33,7 +33,7 @@ class MultimodalFusionModel(nn.Module):
             nn.LayerNorm(fusion_dim),
         )
         self.sync_proj = nn.Sequential(
-            nn.Linear(self.sync_branch.hidden_dim, fusion_dim),
+            nn.Linear(self.sync_branch.joint_dim, fusion_dim),
             nn.LayerNorm(fusion_dim),
         )
 

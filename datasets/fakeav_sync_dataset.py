@@ -175,8 +175,11 @@ class FakeAVSyncDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, int, int]]):
 
         speaker_id = self.file_speakers[path]
         rng = random.Random(self.seed * 9973 + base_idx * 131 + (1 if force_negative else 0))
+        # When paired_negatives is enabled, each base sample should emit one aligned
+        # positive view and one deliberately misaligned negative view. Applying
+        # negative_prob on top of the positive half skews the dataset toward negatives.
         make_negative = force_negative
-        if not make_negative and self.config.negative_prob > 0.0:
+        if not self.config.paired_negatives and not make_negative and self.config.negative_prob > 0.0:
             make_negative = rng.random() < self.config.negative_prob
 
         if make_negative:

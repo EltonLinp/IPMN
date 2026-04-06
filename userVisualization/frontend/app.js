@@ -44,17 +44,29 @@ const ekycIdFaceHint = document.getElementById("ekycIdFaceHint");
 const ekycSelfieFaceHint = document.getElementById("ekycSelfieFaceHint");
 const ekycVideoFrameHint = document.getElementById("ekycVideoFrameHint");
 const ekycVideoHint = document.getElementById("ekycVideoHint");
+const idDocumentStatus = document.getElementById("idDocumentStatus");
+const idDocumentRiskLevel = document.getElementById("idDocumentRiskLevel");
+const idDocumentSummary = document.getElementById("idDocumentSummary");
+const idDocumentReupload = document.getElementById("idDocumentReupload");
+const idDocumentIssues = document.getElementById("idDocumentIssues");
 const scoreDeepfake = document.getElementById("scoreDeepfake");
+const scoreDeepfakeMeta = document.getElementById("scoreDeepfakeMeta");
 const scoreIdSelfie = document.getElementById("scoreIdSelfie");
 const scoreIdVideo = document.getElementById("scoreIdVideo");
+const scoreIdSelfieMeta = document.getElementById("scoreIdSelfieMeta");
+const scoreIdVideoMeta = document.getElementById("scoreIdVideoMeta");
 const scoreDeepfakeBar = document.getElementById("scoreDeepfakeBar");
 const scoreIdSelfieBar = document.getElementById("scoreIdSelfieBar");
 const scoreIdVideoBar = document.getElementById("scoreIdVideoBar");
+const scoreFusionThreshold = document.getElementById("scoreFusionThreshold");
+const scoreFusionStrategy = document.getElementById("scoreFusionStrategy");
+const scoreFusionWeights = document.getElementById("scoreFusionWeights");
 const ekycDecision = document.getElementById("ekycDecision");
 const ekycDecisionChip = document.getElementById("ekycDecisionChip");
+const ekycDecisionSummary = document.getElementById("ekycDecisionSummary");
+const ekycDecisionMeta = document.getElementById("ekycDecisionMeta");
 const ekycReasons = document.getElementById("ekycReasons");
 const ekycError = document.getElementById("ekycError");
-const ekycDecisionReasonCodes = document.getElementById("ekycDecisionReasonCodes");
 const ekycQualityFlags = document.getElementById("ekycQualityFlags");
 const ekycSyncMismatch = document.getElementById("ekycSyncMismatch");
 const ekycSyncInterpolated = document.getElementById("ekycSyncInterpolated");
@@ -445,7 +457,9 @@ function updateResults(result) {
   const finalLabel = result.final?.label === "Fake" ? "Suspicious (fake)" : "Likely genuine";
   const fakeProb = clamp01(result.final?.fake ?? 0);
   const confidence = Math.max(result.final?.real ?? 0, result.final?.fake ?? 0);
-  summaryChip.textContent = `${finalLabel} - Fake ${(fakeProb * 100).toFixed(1)}% (Confidence ${(confidence * 100).toFixed(1)}%)`;
+  if (summaryChip) {
+    summaryChip.textContent = `${finalLabel} - Fake ${(fakeProb * 100).toFixed(1)}% (Confidence ${(confidence * 100).toFixed(1)}%)`;
+  }
 }
 
 function updateEkycResults(payload) {
@@ -453,15 +467,25 @@ function updateEkycResults(payload) {
     return;
   }
   const artifacts = payload.artifacts || {};
+  const documentCheck = payload.document_check || {};
   const deepfakeScore = payload.deepfake?.score;
   const deepfake = payload.deepfake || {};
   const details = deepfake.details || {};
+  const calibration = deepfake.calibration || {};
   const quality = deepfake.quality || {};
   const syncQuality = quality.sync || {};
   const idSelfie = payload.match?.id_selfie;
   const idVideo = payload.match?.id_video;
+  const matchThresholds = payload.match?.thresholds || {};
+  const idSelfiePassThreshold =
+    typeof matchThresholds.id_selfie_pass === "number" ? matchThresholds.id_selfie_pass : 0.6;
+  const idVideoRejectThreshold =
+    typeof matchThresholds.id_video_reject === "number" ? matchThresholds.id_video_reject : 0.458;
+  const idVideoPassThreshold =
+    typeof matchThresholds.id_video_pass === "number" ? matchThresholds.id_video_pass : 0.78;
   const decision = payload.fusion?.decision || "--";
   const reasons = Array.isArray(payload.fusion?.reason) ? payload.fusion.reason : [];
+  const explanation = payload.fusion?.explanation || {};
 
   if (ekycDecision) {
     ekycDecision.textContent = decision;
@@ -469,6 +493,8 @@ function updateEkycResults(payload) {
   if (ekycDecisionChip) {
     ekycDecisionChip.textContent = decision;
   }
+  renderIdDocumentCheck(documentCheck);
+  renderDecisionExplanation(explanation, decision, reasons);
 
   if (ekycReasons) {
     ekycReasons.innerHTML = "";
@@ -482,20 +508,28 @@ function updateEkycResults(payload) {
 
   const deepfakeValue = typeof deepfakeScore === "number" ? deepfakeScore : null;
   setScorePercent(scoreDeepfake, scoreDeepfakeBar, deepfakeValue, "fake");
+  renderFusionCalibration(calibration, deepfakeValue);
   updateExplainability({
-    decisionReason: payload.decision_reason,
     qualityFlags: deepfake.quality_flags,
     syncQuality,
     branchDetails: details,
   });
 
   const idSelfieOk = idSelfie?.ok === true;
-  const idSelfieScore = idSelfieOk && typeof idSelfie?.score === "number" ? idSelfie.score : null;
-  setMatchScore(scoreIdSelfie, scoreIdSelfieBar, idSelfieScore);
+  const idSelfieProb = idSelfieOk && typeof idSelfie?.prob === "number" ? idSelfie.prob : null;
+  setMatchProbScore(scoreIdSelfie, scoreIdSelfieBar, idSelfieProb, { passThreshold: idSelfiePassThreshold });
+  setMatchThresholdMeta(scoreIdSelfieMeta, { passThreshold: idSelfiePassThreshold });
 
   const idVideoOk = idVideo?.ok === true;
   const idVideoProb = idVideoOk && typeof idVideo?.prob === "number" ? idVideo.prob : null;
-  setMatchProbScore(scoreIdVideo, scoreIdVideoBar, idVideoProb);
+  setMatchProbScore(scoreIdVideo, scoreIdVideoBar, idVideoProb, {
+    rejectThreshold: idVideoRejectThreshold,
+    passThreshold: idVideoPassThreshold,
+  });
+  setMatchThresholdMeta(scoreIdVideoMeta, {
+    rejectThreshold: idVideoRejectThreshold,
+    passThreshold: idVideoPassThreshold,
+  });
 
   setImage(ekycIdFaceImg, ekycIdFaceHint, artifacts?.id_face_path, "ID face not available");
   setImage(ekycSelfieFaceImg, ekycSelfieFaceHint, artifacts?.selfie_face_path, "Selfie face not available");
@@ -512,12 +546,161 @@ function updateEkycResults(payload) {
       ekycVideoHint.textContent = "";
     }
   }
-
-  updateLegacyPanelsFromEkyc(payload);
 }
 
-function updateExplainability({ decisionReason, qualityFlags, syncQuality, branchDetails }) {
-  renderCodeTags(ekycDecisionReasonCodes, decisionReason, "None");
+function renderIdDocumentCheck(documentCheck) {
+  const status = normalizeDocumentCheckStatus(documentCheck?.status);
+  const riskLevel = documentCheck?.risk_level ? String(documentCheck.risk_level) : "--";
+  const summary =
+    typeof documentCheck?.summary === "string" && documentCheck.summary.trim().length > 0
+      ? documentCheck.summary
+      : "No document screening result.";
+  const userMessage =
+    typeof documentCheck?.user_message === "string" && documentCheck.user_message.trim().length > 0
+      ? documentCheck.user_message
+      : "";
+  const issues = Array.isArray(documentCheck?.issues) ? documentCheck.issues : [];
+
+  if (idDocumentStatus) {
+    idDocumentStatus.textContent = status;
+  }
+  if (idDocumentRiskLevel) {
+    idDocumentRiskLevel.textContent = riskLevel;
+    idDocumentRiskLevel.className = `document-risk-pill ${status.toLowerCase()}`;
+  }
+  if (idDocumentSummary) {
+    idDocumentSummary.textContent = summary;
+  }
+  if (idDocumentReupload) {
+    if (documentCheck?.needs_reupload) {
+      idDocumentReupload.hidden = false;
+      idDocumentReupload.textContent = userMessage || "Please re-upload the ID photo.";
+    } else {
+      idDocumentReupload.hidden = true;
+      idDocumentReupload.textContent = "";
+    }
+  }
+  if (!idDocumentIssues) {
+    return;
+  }
+  idDocumentIssues.innerHTML = "";
+
+  if (issues.length === 0) {
+    const clean = document.createElement("div");
+    clean.className = "document-issue-card pass";
+    clean.appendChild(buildDocumentIssueBadge("PASS"));
+
+    const title = document.createElement("p");
+    title.className = "document-issue-title";
+    title.textContent = "No major issue detected";
+    clean.appendChild(title);
+
+    const message = document.createElement("p");
+    message.className = "document-issue-message";
+    message.textContent = "The uploaded ID photo passed the current document quality screening.";
+    clean.appendChild(message);
+
+    idDocumentIssues.appendChild(clean);
+    return;
+  }
+
+  issues.forEach((issue) => {
+    const severity = normalizeIssueSeverity(issue?.severity);
+    const card = document.createElement("article");
+    card.className = `document-issue-card ${severity}`;
+
+    const header = document.createElement("div");
+    header.className = "document-issue-header";
+
+    const title = document.createElement("p");
+    title.className = "document-issue-title";
+    title.textContent = issue?.title ? String(issue.title) : "Issue";
+    header.appendChild(title);
+    header.appendChild(buildDocumentIssueBadge(severity.toUpperCase()));
+    card.appendChild(header);
+
+    const message = document.createElement("p");
+    message.className = "document-issue-message";
+    message.textContent =
+      issue?.message && String(issue.message).trim().length > 0
+        ? String(issue.message)
+        : "No further detail.";
+    card.appendChild(message);
+
+    idDocumentIssues.appendChild(card);
+  });
+}
+
+function normalizeDocumentCheckStatus(value) {
+  const normalized = value == null ? "" : String(value).trim().toUpperCase();
+  if (normalized === "PASS" || normalized === "REVIEW" || normalized === "REUPLOAD") {
+    return normalized;
+  }
+  return "--";
+}
+
+function normalizeIssueSeverity(value) {
+  const normalized = value == null ? "" : String(value).trim().toLowerCase();
+  if (normalized === "high") {
+    return "high";
+  }
+  if (normalized === "medium") {
+    return "medium";
+  }
+  return "pass";
+}
+
+function buildDocumentIssueBadge(text) {
+  const badge = document.createElement("span");
+  const tone = normalizeDocumentIssueBadgeTone(text);
+  badge.className = `document-issue-badge ${tone}`;
+  badge.textContent = text;
+  return badge;
+}
+
+function normalizeDocumentIssueBadgeTone(value) {
+  const normalized = value == null ? "" : String(value).trim().toUpperCase();
+  if (normalized === "HIGH" || normalized === "REUPLOAD") {
+    return "high";
+  }
+  if (normalized === "MEDIUM" || normalized === "REVIEW") {
+    return "medium";
+  }
+  return "pass";
+}
+
+function renderDecisionExplanation(explanation, decision, reasons) {
+  if (ekycDecisionSummary) {
+    const summary =
+      typeof explanation?.summary === "string" && explanation.summary.trim().length > 0
+        ? explanation.summary
+        : buildDecisionSummaryFallback(decision, reasons);
+    ekycDecisionSummary.textContent = summary;
+  }
+}
+
+function buildDecisionSummaryFallback(decision, reasons) {
+  const normalized = normalizeDecisionStatus(decision);
+  const reasonText = Array.isArray(reasons) && reasons.length ? reasons.join("; ") : "No reasons provided.";
+  return `${normalized}: ${reasonText}`;
+}
+
+function normalizeDecisionStatus(value) {
+  const normalized = value == null ? "" : String(value).trim().toUpperCase();
+  if (normalized === "PASS" || normalized === "REVIEW" || normalized === "REJECT") {
+    return normalized;
+  }
+  return "REVIEW";
+}
+
+function buildDecisionStatusBadge(status) {
+  const badge = document.createElement("span");
+  badge.className = `decision-status-badge ${status.toLowerCase()}`;
+  badge.textContent = status;
+  return badge;
+}
+
+function updateExplainability({ qualityFlags, syncQuality, branchDetails }) {
   renderCodeTags(ekycQualityFlags, qualityFlags, "None");
 
   renderBoolBadge(ekycSyncMismatch, toOptionalBoolean(syncQuality?.mismatch));
@@ -527,6 +710,46 @@ function updateExplainability({ decisionReason, qualityFlags, syncQuality, branc
   renderPercentValue(ekycAudioFake, branchDetails?.audio?.fake);
   renderPercentValue(ekycVideoFake, branchDetails?.video?.fake);
   renderPercentValue(ekycSyncFake, branchDetails?.sync?.fake);
+}
+
+function renderFusionCalibration(calibration, deepfakeValue) {
+  const threshold =
+    typeof calibration?.threshold === "number" && !Number.isNaN(calibration.threshold)
+      ? calibration.threshold
+      : null;
+  const strategy =
+    typeof calibration?.strategy === "string" && calibration.strategy.trim().length > 0
+      ? calibration.strategy.trim()
+      : "weighted";
+  const weights = calibration?.weights || {};
+
+  if (scoreFusionThreshold) {
+    scoreFusionThreshold.textContent = threshold !== null ? `${(clamp01(threshold) * 100).toFixed(1)}%` : "N/A";
+  }
+  if (scoreFusionStrategy) {
+    scoreFusionStrategy.textContent = `Strategy: ${strategy}`;
+  }
+  if (scoreFusionWeights) {
+    const audio = typeof weights.audio === "number" ? weights.audio.toFixed(2) : "--";
+    const video = typeof weights.video === "number" ? weights.video.toFixed(2) : "--";
+    const sync = typeof weights.sync === "number" ? weights.sync.toFixed(2) : "--";
+    scoreFusionWeights.textContent = `Weights: audio ${audio} / video ${video} / sync ${sync}`;
+  }
+  if (scoreDeepfakeMeta) {
+    if (threshold !== null && typeof deepfakeValue === "number") {
+      const relation = deepfakeValue >= threshold ? "above" : "below";
+      scoreDeepfakeMeta.textContent = `Calibrated tri-modal fake score. Current score is ${relation} the threshold.`;
+    } else {
+      scoreDeepfakeMeta.textContent = "Calibrated tri-modal fake score.";
+    }
+  }
+  if (ekycDecisionMeta) {
+    if (threshold !== null && typeof deepfakeValue === "number") {
+      ekycDecisionMeta.textContent = `Deepfake score ${(clamp01(deepfakeValue) * 100).toFixed(1)}% vs threshold ${(clamp01(threshold) * 100).toFixed(1)}%.`;
+    } else {
+      ekycDecisionMeta.textContent = "Deepfake score will be compared against the calibrated threshold after evaluation.";
+    }
+  }
 }
 
 function renderCodeTags(container, values, emptyText = "None") {
@@ -610,6 +833,11 @@ function updateLegacyPanelsFromEkyc(payload) {
     return;
   }
   const details = payload.deepfake?.details || {};
+  const matchThresholds = payload.match?.thresholds || {};
+  const idVideoRejectThreshold =
+    typeof matchThresholds.id_video_reject === "number" ? matchThresholds.id_video_reject : 0.458;
+  const idVideoPassThreshold =
+    typeof matchThresholds.id_video_pass === "number" ? matchThresholds.id_video_pass : 0.78;
   const fakeScore = typeof payload.deepfake?.score === "number" ? payload.deepfake.score : null;
   const label = payload.deepfake?.label || (fakeScore !== null && fakeScore >= 0.5 ? "Fake" : "Real");
   if (fakeScore !== null) {
@@ -639,7 +867,10 @@ function updateLegacyPanelsFromEkyc(payload) {
 
   const idVideo = payload.match?.id_video;
   if (idVideo) {
-    updateIdMatchCard(idVideo);
+    updateIdMatchCard(idVideo, {
+      rejectThreshold: idVideoRejectThreshold,
+      passThreshold: idVideoPassThreshold,
+    });
   }
 }
 
@@ -704,27 +935,6 @@ function setMatchScore(textEl, barEl, value) {
   }
 }
 
-function setMatchProbScore(textEl, barEl, value) {
-  if (!textEl) {
-    return;
-  }
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    textEl.textContent = "N/A";
-    if (barEl) {
-      barEl.style.width = "0%";
-    }
-    return;
-  }
-  const prob = Math.max(0, Math.min(1, value));
-  textEl.textContent = `${(prob * 100).toFixed(1)}%`;
-  if (barEl) {
-    barEl.classList.toggle("real", prob >= 0.6);
-    barEl.classList.toggle("fake", prob < 0.6);
-    barEl.style.width = `${prob * 100}%`;
-    barEl.style.left = "0%";
-  }
-}
-
 function updateIdPanels(idFace, idMatch) {
   updateIdFaceCard(idFace);
   updateIdMatchCard(idMatch);
@@ -751,7 +961,62 @@ function updateIdFaceCard(data) {
   showError(formatIdError(error));
 }
 
-function updateIdMatchCard(data) {
+function getMatchBand(prob, { rejectThreshold = null, passThreshold = 0.6 } = {}) {
+  if (typeof prob !== "number" || Number.isNaN(prob)) {
+    return "unknown";
+  }
+  if (typeof rejectThreshold === "number" && prob < rejectThreshold) {
+    return "reject";
+  }
+  if (prob >= passThreshold) {
+    return "pass";
+  }
+  if (typeof rejectThreshold === "number") {
+    return "review";
+  }
+  return "reject";
+}
+
+function setMatchProbScore(textEl, barEl, value, { rejectThreshold = null, passThreshold = 0.6 } = {}) {
+  if (!textEl) {
+    return;
+  }
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    textEl.textContent = "N/A";
+    if (barEl) {
+      barEl.style.width = "0%";
+    }
+    return;
+  }
+  const prob = Math.max(0, Math.min(1, value));
+  const band = getMatchBand(prob, { rejectThreshold, passThreshold });
+  textEl.textContent = `${(prob * 100).toFixed(1)}%`;
+  if (barEl) {
+    barEl.classList.toggle("real", band === "pass");
+    barEl.classList.toggle("review", band === "review");
+    barEl.classList.toggle("fake", band === "reject");
+    barEl.style.width = `${prob * 100}%`;
+    barEl.style.left = "0%";
+  }
+}
+
+function setMatchThresholdMeta(element, { rejectThreshold = null, passThreshold = 0.6 } = {}) {
+  if (!element) {
+    return;
+  }
+  if (typeof passThreshold !== "number" || Number.isNaN(passThreshold)) {
+    element.textContent = "Match probability";
+    return;
+  }
+  if (typeof rejectThreshold === "number" && !Number.isNaN(rejectThreshold)) {
+    element.textContent =
+      `Match probability · reject < ${(clamp01(rejectThreshold) * 100).toFixed(1)}% · pass >= ${(clamp01(passThreshold) * 100).toFixed(1)}%`;
+    return;
+  }
+  element.textContent = `Match probability · pass line ${(clamp01(passThreshold) * 100).toFixed(1)}%`;
+}
+
+function updateIdMatchCard(data, { rejectThreshold = null, passThreshold = 0.6 } = {}) {
   if (!idResultGrid) {
     return;
   }
@@ -770,10 +1035,25 @@ function updateIdMatchCard(data) {
     const score = typeof data.score === "number" ? data.score.toFixed(3) : "--";
     const prob = typeof data.prob === "number" ? (data.prob * 100).toFixed(1) : "--";
     const probValue = typeof data.prob === "number" ? data.prob : 0;
-    const label = probValue >= 0.6 ? "Likely match" : "Possible match";
+    const band =
+      typeof data.decision === "string" && data.decision.trim().length > 0
+        ? data.decision.trim().toUpperCase()
+        : getMatchBand(probValue, { rejectThreshold, passThreshold }).toUpperCase();
+    let label = "Review range";
+    if (band === "PASS") {
+      label = "Likely match";
+    } else if (band === "REJECT") {
+      label = "Mismatch";
+    }
     card.querySelector('[data-role="label"]').textContent = label;
     card.querySelector('[data-role="score"]').textContent = `${prob}%`;
-    card.querySelector('[data-role="detail"]').textContent = `Score ${score}`;
+    if (typeof rejectThreshold === "number" && !Number.isNaN(rejectThreshold)) {
+      card.querySelector('[data-role="detail"]').textContent =
+        `Score ${score} · reject < ${(clamp01(rejectThreshold) * 100).toFixed(1)}% · pass >= ${(clamp01(passThreshold) * 100).toFixed(1)}%`;
+    } else {
+      card.querySelector('[data-role="detail"]').textContent =
+        `Score ${score} · pass line ${(clamp01(passThreshold) * 100).toFixed(1)}%`;
+    }
     updateMatchBar(probValue);
     if (idSummaryChip) {
       idSummaryChip.textContent = "Match complete";
@@ -880,7 +1160,7 @@ function resetMatchBar() {
 }
 
 function updateCard(key, data) {
-  const card = resultGrid.querySelector(`[data-key="${key}"]`);
+  const card = resultGrid?.querySelector(`[data-key="${key}"]`);
   if (!card || !data) {
     return;
   }

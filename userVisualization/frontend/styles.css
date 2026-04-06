@@ -419,6 +419,208 @@ body {
   color: #6b7280;
 }
 
+.document-check-card {
+  gap: 0.9rem;
+  justify-content: flex-start;
+}
+
+.document-check-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.document-risk-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.document-risk-pill.pass {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.document-risk-pill.review {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.document-risk-pill.reupload {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.document-reupload-banner {
+  margin: 0;
+  border-radius: 12px;
+  padding: 0.8rem 0.95rem;
+  background: #fff1f2;
+  color: #b91c1c;
+  border: 1px solid rgba(185, 28, 28, 0.14);
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.document-issue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.document-issue-card {
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.document-issue-card.high {
+  background: #fff7f7;
+  border-color: rgba(185, 28, 28, 0.16);
+}
+
+.document-issue-card.medium {
+  background: #fffaf0;
+  border-color: rgba(146, 64, 14, 0.16);
+}
+
+.document-issue-card.pass {
+  background: #f3fff8;
+  border-color: rgba(4, 120, 87, 0.14);
+}
+
+.document-issue-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.document-issue-title {
+  margin: 0;
+  font-weight: 700;
+  color: #111827;
+}
+
+.document-issue-message {
+  margin: 0;
+  color: #4b5563;
+  line-height: 1.5;
+  font-size: 0.93rem;
+}
+
+.document-issue-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.16rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.document-issue-badge.high {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.document-issue-badge.medium {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.document-issue-badge.pass {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.decision-summary {
+  margin-top: 0.35rem;
+  line-height: 1.6;
+}
+
+.decision-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.8rem;
+  margin-bottom: 0.4rem;
+}
+
+.decision-detail-card {
+  border-radius: 14px;
+  padding: 0.85rem 0.95rem;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.decision-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.decision-detail-title {
+  margin: 0;
+  font-weight: 700;
+  color: #111827;
+}
+
+.decision-detail-value {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.decision-detail-message {
+  margin: 0;
+  color: #4b5563;
+  line-height: 1.5;
+  font-size: 0.93rem;
+}
+
+.decision-status-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.decision-status-badge.pass {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.decision-status-badge.review {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.decision-status-badge.reject {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
 .metric-card.real {
   background: #ecfdf3;
   border-color: rgba(16, 185, 129, 0.2);
@@ -432,6 +634,13 @@ body {
 .explainability-card {
   gap: 0.9rem;
   justify-content: flex-start;
+}
+
+#ekycReasons {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+  color: #4b5563;
+  line-height: 1.6;
 }
 
 .explain-row {
@@ -633,6 +842,10 @@ body {
 
 .bar-segment.real {
   background: #10b981;
+}
+
+.bar-segment.review {
+  background: #f59e0b;
 }
 
 .bar-segment.fake {

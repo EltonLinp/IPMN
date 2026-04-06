@@ -185,17 +185,77 @@ def compute_losses(
     return total, log_dict
 
 
+def update_confusion_counts(
+    preds: torch.Tensor,
+    labels: torch.Tensor,
+    counts: Dict[str, int],
+) -> None:
+    preds = preds.view(-1).long()
+    labels = labels.view(-1).long()
+    counts["tp"] += int(((preds == 1) & (labels == 1)).sum().item())
+    counts["tn"] += int(((preds == 0) & (labels == 0)).sum().item())
+    counts["fp"] += int(((preds == 1) & (labels == 0)).sum().item())
+    counts["fn"] += int(((preds == 0) & (labels == 1)).sum().item())
+
+
+def summarize_epoch_metrics(
+    *,
+    total_loss: float,
+    total_samples: int,
+    counts: Dict[str, int],
+) -> Dict[str, float | int]:
+    tp = counts["tp"]
+    tn = counts["tn"]
+    fp = counts["fp"]
+    fn = counts["fn"]
+    accuracy = (tp + tn) / max(total_samples, 1)
+    precision = tp / max(tp + fp, 1)
+    recall = tp / max(tp + fn, 1)
+    specificity = tn / max(tn + fp, 1)
+    f1 = 2 * precision * recall / max(precision + recall, 1e-8)
+    balanced_acc = (recall + specificity) / 2.0
+    return {
+        "loss": float(total_loss / max(total_samples, 1)),
+        "accuracy": float(accuracy),
+        "precision": float(precision),
+        "recall": float(recall),
+        "specificity": float(specificity),
+        "f1": float(f1),
+        "balanced_acc": float(balanced_acc),
+        "tp": int(tp),
+        "tn": int(tn),
+        "fp": int(fp),
+        "fn": int(fn),
+        "samples": int(total_samples),
+    }
+
+
+def format_epoch_metrics(stage: str, metrics: Dict[str, float | int]) -> str:
+    return (
+        f"{stage}: "
+        f"loss={float(metrics['loss']):.4f}, "
+        f"acc={float(metrics['accuracy']) * 100:.2f}%, "
+        f"precision={float(metrics['precision']) * 100:.2f}%, "
+        f"recall={float(metrics['recall']) * 100:.2f}%, "
+        f"f1={float(metrics['f1']) * 100:.2f}%, "
+        f"bal_acc={float(metrics['balanced_acc']) * 100:.2f}%, "
+        f"tp={int(metrics['tp'])}, tn={int(metrics['tn'])}, "
+        f"fp={int(metrics['fp'])}, fn={int(metrics['fn'])}, "
+        f"n={int(metrics['samples'])}"
+    )
+
+
 def evaluate(
     model: MultimodalFusionModel,
     loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
     args: argparse.Namespace,
-) -> tuple[float, float]:
+) -> Dict[str, float | int]:
     model.eval()
     total_loss = 0.0
-    total_correct = 0
     total_samples = 0
+    counts = {"tp": 0, "tn": 0, "fp": 0, "fn": 0}
     with torch.no_grad():
         for batch in loader:
             videos = batch["video"].to(device, non_blocking=True)
@@ -205,9 +265,9 @@ def evaluate(
             loss, _ = compute_losses(outputs, {"label": labels, "audio": audio}, criterion, args)
             total_loss += loss.item() * labels.size(0)
             preds = outputs["logits"].argmax(dim=1)
-            total_correct += (preds == labels).sum().item()
+            update_confusion_counts(preds, labels, counts)
             total_samples += labels.size(0)
-    return total_loss / max(total_samples, 1), total_correct / max(total_samples, 1)
+    return summarize_epoch_metrics(total_loss=total_loss, total_samples=total_samples, counts=counts)
 
 
 def train() -> None:
@@ -235,6 +295,7 @@ def train() -> None:
         progress = tqdm(train_loader, desc=f"Epoch {epoch}/{args.epochs}", leave=False)
         running_loss = 0.0
         total_samples = 0
+        train_counts = {"tp": 0, "tn": 0, "fp": 0, "fn": 0}
         for batch in progress:
             videos = batch["video"].to(device, non_blocking=True)
             audio = batch["audio"].to(device, non_blocking=True)
@@ -254,21 +315,31 @@ def train() -> None:
                 loss.backward()
                 optimizer.step()
 
+            preds = outputs["logits"].argmax(dim=1)
+            update_confusion_counts(preds, labels, train_counts)
             running_loss += loss.item() * labels.size(0)
             total_samples += labels.size(0)
             progress.set_postfix({k: f"{v:.3f}" for k, v in log_dict.items()})
 
-        val_loss, val_acc = evaluate(model, val_loader, criterion, device, args)
-        tqdm.write(f"Epoch {epoch}: val_loss={val_loss:.4f}, val_acc={val_acc*100:.2f}%")
+        train_metrics = summarize_epoch_metrics(
+            total_loss=running_loss,
+            total_samples=total_samples,
+            counts=train_counts,
+        )
+        val_metrics = evaluate(model, val_loader, criterion, device, args)
+        tqdm.write(f"Epoch {epoch} {format_epoch_metrics('train', train_metrics)}")
+        tqdm.write(f"Epoch {epoch} {format_epoch_metrics('val', val_metrics)}")
 
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
+        if float(val_metrics["accuracy"]) > best_val_acc:
+            best_val_acc = float(val_metrics["accuracy"])
             torch.save(
                 {
                     "model_state": model.state_dict(),
                     "optimizer_state": optimizer.state_dict(),
                     "epoch": epoch,
-                    "val_acc": val_acc,
+                    "val_acc": float(val_metrics["accuracy"]),
+                    "val_metrics": val_metrics,
+                    "train_metrics": train_metrics,
                     "args": vars(args),
                 },
                 args.save_path,

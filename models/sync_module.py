@@ -41,6 +41,7 @@ class SyncModule(nn.Module):
                     param.requires_grad = True
 
         self.hidden_dim = self.vit.config.hidden_size
+        self.joint_dim = self.hidden_dim * 3
         mean = getattr(self.vit.config, "image_mean", [0.5, 0.5, 0.5])
         std = getattr(self.vit.config, "image_std", [0.5, 0.5, 0.5])
         self.register_buffer("image_mean", torch.tensor(mean).view(1, 3, 1, 1), persistent=False)
@@ -66,10 +67,9 @@ class SyncModule(nn.Module):
         )
         self.temporal_encoder = nn.TransformerEncoder(encoder_layer, num_layers=temporal_layers)
 
-        joint_dim = self.hidden_dim * 3
         self.sync_head = nn.Sequential(
-            nn.LayerNorm(joint_dim),
-            nn.Linear(joint_dim, self.hidden_dim),
+            nn.LayerNorm(self.joint_dim),
+            nn.Linear(self.joint_dim, self.hidden_dim),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(self.hidden_dim, 2),

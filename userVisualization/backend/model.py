@@ -94,7 +94,7 @@ class TriModalDetectionService:
         if strategy_raw is None:
             strategy_raw = get_setting("FINAL_SCORE_STRATEGY", None)
         strategy = str(strategy_raw).strip().lower() if strategy_raw is not None else ""
-        if strategy not in {"raw", "gated", "calibrated"}:
+        if strategy not in {"raw", "gated", "calibrated", "weighted"}:
             strategy = "gated" if legacy_use_gated else "calibrated"
         self._final_score_strategy = strategy
         self._final_fake_threshold = float(max(0.0, min(1.0, _float_env("FINAL_FAKE_THRESHOLD", 0.37))))
@@ -261,6 +261,7 @@ class TriModalDetectionService:
             final_raw=final_raw,
             audio=audio,
             gated=gated,
+            weighted=weighted,
         )
         formatted = {
             "final": final_served,
@@ -790,12 +791,25 @@ class TriModalDetectionService:
         final_raw: Dict[str, object],
         audio: Dict[str, object],
         gated: Dict[str, object],
+        weighted: Dict[str, object],
     ) -> Dict[str, object]:
         strategy = self._final_score_strategy
         if strategy == "raw":
             return dict(final_raw)
         if strategy == "gated":
             return dict(gated)
+        if strategy == "weighted":
+            weighted_score = _safe_float(weighted.get("weighted_score"))
+            if weighted_score is None:
+                return dict(gated)
+            fake = float(max(0.0, min(1.0, weighted_score)))
+            real = float(1.0 - fake)
+            return {
+                "label": "Fake" if fake >= self._final_fake_threshold else "Real",
+                "real": real,
+                "fake": fake,
+                "confidence": float(abs(fake - real)),
+            }
 
         raw_fake = _safe_float(final_raw.get("fake"))
         audio_fake = _safe_float(audio.get("fake"))

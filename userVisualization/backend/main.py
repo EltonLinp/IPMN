@@ -17,6 +17,7 @@ from typing import Mapping, Optional
 
 from .db import UploadRecord, cleanup_expired_uploads, get_session, init_db
 from .deepfake_scoring import compute_deepfake_score
+from .id_document_checker import analyze_id_document
 from .model import get_service
 from .id_matcher import match_id_to_video, match_id_to_selfie
 from .runtime_config import get_setting
@@ -34,6 +35,8 @@ VALID_SYNC_LOW_CONFIDENCE_POLICIES = {
 DECISION_REASON_TO_MESSAGE: dict[str, str] = {
     SYNC_LOW_CONFIDENCE: "Sync alignment unreliable (mismatch/interpolation/length).",
 }
+DEEPFAKE_HIGH_THRESHOLD = 0.6
+DEFAULT_ID_MATCH_PASS_THRESHOLD = 0.6
 
 try:
     from term2.code.face_extractor import extract_id_face
@@ -161,6 +164,7 @@ async def analyze(
         except Exception as exc:  # pragma: no cover - runtime safety
             db.rollback()
             LOGGER.exception("Failed to update ID face path: %s", exc)
+    id_document_check = analyze_id_document(id_path, face_result=id_face_result)
 
     try:
         service = get_service()
@@ -181,6 +185,7 @@ async def analyze(
         "result": result,
         "id_face": id_face_payload,
         "id_match": id_match,
+        "id_document": id_document_check,
     }
 
 
@@ -219,6 +224,7 @@ async def evaluate_ekyc(
             id_face_result = {"ok": False, "error": "read_error"}
     if id_face_result.get("ok") and isinstance(id_face_result.get("crop_path"), str):
         id_face_path = str(id_face_result["crop_path"])
+    id_document_check = analyze_id_document(id_path, face_result=id_face_result)
 
     selfie_face_path: Optional[str] = None
     selfie_face_result: dict[str, object] = {"ok": False, "error": "read_error"}
@@ -261,6 +267,11 @@ async def evaluate_ekyc(
     deepfake_score, deepfake_label = _compute_deepfake_score(deepfake_result)
     id_selfie_score = _safe_float(id_selfie_match.get("prob"))
     id_video_score = _safe_float(id_video_match.get("prob"))
+    id_video_match = dict(id_video_match)
+    id_video_match["decision"] = _id_video_match_status(
+        ok=bool(id_video_match.get("ok")),
+        score=id_video_score,
+    )
     sync_quality = _extract_sync_quality(deepfake_result)
     sync_low_confidence = _is_sync_low_confidence(sync_quality)
     sync_quality_payload = _sync_quality_payload(sync_quality)
@@ -276,6 +287,18 @@ async def evaluate_ekyc(
         sync_low_confidence=sync_low_confidence,
         sync_low_confidence_policy=sync_low_confidence_policy,
     )
+    fusion_explanation = _build_fusion_explanation(
+        deepfake_score=deepfake_score,
+        id_selfie_score=id_selfie_score,
+        id_video_score=id_video_score,
+        id_selfie_ok=bool(id_selfie_match.get("ok")),
+        id_video_ok=bool(id_video_match.get("ok")),
+        sync_quality=sync_quality_payload,
+        sync_low_confidence=sync_low_confidence,
+        decision=decision,
+        risk=risk,
+        reasons=reasons,
+    )
 
     best_frame_index = _safe_int(id_video_match.get("best_frame"))
     video_best_frame_path: Optional[str] = None
@@ -285,9 +308,11 @@ async def evaluate_ekyc(
             video_best_frame_path = str(extracted)
 
     payload = {
+        "document_check": id_document_check,
         "deepfake": {
             "score": deepfake_score,
             "label": deepfake_label,
+            "calibration": _deepfake_calibration_cfg(),
             "details": {
                 "video": deepfake_result.get("video"),
                 "audio": deepfake_result.get("audio"),
@@ -306,14 +331,16 @@ async def evaluate_ekyc(
             "id_video": id_video_match,
             "best_video_frame_index": best_frame_index,
             "thresholds": {
-                "id_selfie_pass": 0.6,
-                "id_video_pass": 0.6,
+                "id_selfie_pass": _id_selfie_pass_threshold(),
+                "id_video_reject": _id_video_reject_threshold(),
+                "id_video_pass": _id_video_pass_threshold(),
             },
         },
         "fusion": {
             "risk": risk,
             "decision": decision,
             "reason": reasons,
+            "explanation": fusion_explanation,
         },
         "decision_reason": decision_reason,
         "artifacts": {
@@ -404,6 +431,48 @@ def _compute_deepfake_score(result: dict[str, object]) -> tuple[float, str]:
     return score, label
 
 
+def _deepfake_calibration_cfg() -> dict[str, object]:
+    return {
+        "strategy": str(get_setting("FINAL_SCORE_STRATEGY", "weighted")),
+        "threshold": _float_cfg("FINAL_FAKE_THRESHOLD", 0.37),
+        "weights": {
+            "audio": _float_cfg("DEEPFAKE_WEIGHT_AUDIO", 0.15),
+            "video": _float_cfg("DEEPFAKE_WEIGHT_VIDEO", 0.7),
+            "sync": _float_cfg("DEEPFAKE_WEIGHT_SYNC", 0.15),
+        },
+    }
+
+
+def _shared_id_match_pass_threshold() -> float:
+    return _float_cfg("ID_MATCH_PASS_THRESHOLD", DEFAULT_ID_MATCH_PASS_THRESHOLD)
+
+
+def _id_selfie_pass_threshold() -> float:
+    return _float_cfg("ID_SELFIE_MATCH_PASS_THRESHOLD", _shared_id_match_pass_threshold())
+
+
+def _id_video_reject_threshold() -> float:
+    return _float_cfg("ID_VIDEO_MATCH_REJECT_THRESHOLD", 0.458)
+
+
+def _id_video_pass_threshold() -> float:
+    reject_threshold = _id_video_reject_threshold()
+    configured = _float_cfg("ID_VIDEO_MATCH_PASS_THRESHOLD", _shared_id_match_pass_threshold())
+    return configured if configured >= reject_threshold else reject_threshold
+
+
+def _id_video_match_status(*, ok: bool, score: float) -> str:
+    if not ok:
+        return "REVIEW"
+    reject_threshold = _id_video_reject_threshold()
+    pass_threshold = _id_video_pass_threshold()
+    if score < reject_threshold:
+        return "REJECT"
+    if score < pass_threshold:
+        return "REVIEW"
+    return "PASS"
+
+
 def _safe_int(value: object) -> Optional[int]:
     try:
         if value is None:
@@ -439,30 +508,30 @@ def _fuse_decision(
     risk = w1 * deepfake_score + w2 * (1.0 - selfie_val) + w3 * (1.0 - video_val)
     pass_threshold = _float_cfg("RISK_THRESHOLD_PASS", 0.4)
     reject_threshold = _float_cfg("RISK_THRESHOLD_REJECT", 0.7)
-    hard_reject_df_threshold = _float_cfg("RISK_HARD_REJECT_DF_THRESHOLD", 0.8)
+    id_selfie_pass_threshold = _id_selfie_pass_threshold()
     if reject_threshold < pass_threshold:
         reject_threshold = pass_threshold
 
-    hard_reject_df = deepfake_score >= hard_reject_df_threshold
-    if hard_reject_df:
-        decision = "REJECT"
-    elif risk < pass_threshold:
+    if risk < pass_threshold:
         decision = "PASS"
     elif risk < reject_threshold:
         decision = "REVIEW"
     else:
         decision = "REJECT"
     reasons: list[str] = []
-    if hard_reject_df:
-        reasons.append("Deepfake score critical")
-    if deepfake_score > 0.6:
+    if deepfake_score > DEEPFAKE_HIGH_THRESHOLD:
         reasons.append("Deepfake score high")
-    if not id_selfie_ok or id_selfie_score < 0.6:
+    if not id_selfie_ok or id_selfie_score < id_selfie_pass_threshold:
         reasons.append("ID vs selfie low")
-    if not id_video_ok or id_video_score < 0.6:
-        reasons.append("ID vs video low")
+    id_video_status = _id_video_match_status(ok=id_video_ok, score=id_video_score)
+    if id_video_status == "REJECT":
+        reasons.append("ID vs video mismatch")
+    elif id_video_status == "REVIEW":
+        reasons.append("ID vs video review range")
+    if decision == "PASS" and id_video_status != "PASS":
+        decision = "REVIEW"
     decision_reason: list[str] = []
-    if sync_low_confidence and not hard_reject_df:
+    if sync_low_confidence:
         decision_reason.append(SYNC_LOW_CONFIDENCE)
         policy = _normalize_sync_low_confidence_policy(sync_low_confidence_policy)
         if policy == SYNC_LOW_CONFIDENCE_POLICY_REVIEW_ALL:
@@ -473,6 +542,287 @@ def _fuse_decision(
         reasons.append("All checks within threshold")
     reasons = _merge_reason_messages(reasons, decision_reason)
     return float(risk), decision, reasons, _unique_codes(decision_reason)
+
+
+def _build_fusion_explanation(
+    *,
+    deepfake_score: float,
+    id_selfie_score: float,
+    id_video_score: float,
+    id_selfie_ok: bool,
+    id_video_ok: bool,
+    sync_quality: Mapping[str, object] | None,
+    sync_low_confidence: bool,
+    decision: str,
+    risk: float,
+    reasons: list[str],
+) -> dict[str, object]:
+    pass_threshold = _float_cfg("RISK_THRESHOLD_PASS", 0.4)
+    reject_threshold = _float_cfg("RISK_THRESHOLD_REJECT", 0.7)
+    id_selfie_pass_threshold = _id_selfie_pass_threshold()
+    id_video_reject_threshold = _id_video_reject_threshold()
+    id_video_pass_threshold = _id_video_pass_threshold()
+    risk_level = _risk_level_from_decision(decision)
+
+    deepfake_status = "PASS"
+    if deepfake_score > DEEPFAKE_HIGH_THRESHOLD:
+        deepfake_status = "REVIEW"
+
+    id_selfie_low = (not id_selfie_ok) or id_selfie_score < id_selfie_pass_threshold
+    id_video_status = _id_video_match_status(ok=id_video_ok, score=id_video_score)
+    id_video_needs_review = id_video_status != "PASS"
+    id_selfie_status = _decision_item_status(failed=id_selfie_low, decision=decision)
+    sync_status = "REVIEW" if sync_low_confidence else "PASS"
+    sync_flags = _sync_flag_names(sync_quality)
+
+    items = [
+        {
+            "key": "deepfake",
+            "title": "Deepfake risk",
+            "status": deepfake_status,
+            "value": _percent_text(deepfake_score),
+            "message": _deepfake_reason_text(
+                deepfake_score=deepfake_score,
+            ),
+        },
+        {
+            "key": "id_selfie",
+            "title": "ID vs Selfie",
+            "status": id_selfie_status,
+            "value": _percent_text(id_selfie_score) if id_selfie_ok else "Unavailable",
+            "message": _match_reason_text(
+                label="selfie",
+                ok=id_selfie_ok,
+                score=id_selfie_score,
+                pass_threshold=id_selfie_pass_threshold,
+            ),
+        },
+        {
+            "key": "id_video",
+            "title": "ID vs Video",
+            "status": id_video_status,
+            "value": _percent_text(id_video_score) if id_video_ok else "Unavailable",
+            "message": _match_reason_text(
+                label="video",
+                ok=id_video_ok,
+                score=id_video_score,
+                pass_threshold=id_video_pass_threshold,
+                reject_threshold=id_video_reject_threshold,
+            ),
+        },
+        {
+            "key": "sync_quality",
+            "title": "Sync quality",
+            "status": sync_status,
+            "value": ", ".join(sync_flags) if sync_flags else "OK",
+            "message": _sync_reason_text(sync_flags),
+        },
+        {
+            "key": "final_risk",
+            "title": "Final decision rule",
+            "status": str(decision).strip().upper() or "REVIEW",
+            "value": _risk_value_text(risk),
+            "message": _final_decision_reason_text(
+                decision=decision,
+                risk=risk,
+                pass_threshold=pass_threshold,
+                reject_threshold=reject_threshold,
+                sync_low_confidence=sync_low_confidence,
+            ),
+        },
+    ]
+
+    return {
+        "summary": _build_fusion_summary(
+            decision=decision,
+            risk=risk,
+            pass_threshold=pass_threshold,
+            reject_threshold=reject_threshold,
+            sync_low_confidence=sync_low_confidence,
+            id_selfie_low=id_selfie_low,
+            id_video_needs_review=id_video_needs_review,
+        ),
+        "risk_level": risk_level,
+        "thresholds": {
+            "risk_pass": pass_threshold,
+            "risk_reject": reject_threshold,
+            "deepfake_high": DEEPFAKE_HIGH_THRESHOLD,
+            "id_selfie_pass": id_selfie_pass_threshold,
+            "id_video_reject": id_video_reject_threshold,
+            "id_video_pass": id_video_pass_threshold,
+        },
+        "items": items,
+        "triggered_reasons": list(reasons),
+    }
+
+
+def _risk_level_from_decision(decision: str) -> str:
+    normalized = str(decision).strip().upper()
+    if normalized == "PASS":
+        return "Low"
+    if normalized == "REVIEW":
+        return "Medium"
+    if normalized == "REJECT":
+        return "High"
+    return "Unknown"
+
+
+def _decision_item_status(*, failed: bool, decision: str) -> str:
+    if not failed:
+        return "PASS"
+    return "REJECT" if str(decision).strip().upper() == "REJECT" else "REVIEW"
+
+
+def _percent_text(value: float) -> str:
+    return f"{max(0.0, min(1.0, float(value))) * 100:.1f}%"
+
+
+def _risk_value_text(value: float) -> str:
+    return f"{float(value):.3f}"
+
+
+def _build_fusion_summary(
+    *,
+    decision: str,
+    risk: float,
+    pass_threshold: float,
+    reject_threshold: float,
+    sync_low_confidence: bool,
+    id_selfie_low: bool,
+    id_video_needs_review: bool,
+) -> str:
+    normalized = str(decision).strip().upper()
+    if normalized == "PASS":
+        return (
+            f"PASS because the fused risk {risk:.3f} stays below the pass threshold "
+            f"{pass_threshold:.3f} and no high-risk rule was triggered."
+        )
+    if normalized == "REVIEW":
+        if sync_low_confidence:
+            return (
+                "REVIEW because at least one signal needs manual confirmation. "
+                "Sync quality is unreliable, so staff should verify the sample before approval."
+            )
+        if id_selfie_low or id_video_needs_review:
+            return (
+                "REVIEW because at least one identity check is below its decision line or inside the review band, "
+                "but the overall evidence does not yet reach reject criteria."
+            )
+        return (
+            f"REVIEW because the fused risk {risk:.3f} falls between the pass "
+            f"({pass_threshold:.3f}) and reject ({reject_threshold:.3f}) thresholds."
+        )
+    return (
+        f"REJECT because the fused risk {risk:.3f} meets or exceeds the reject "
+        f"threshold {reject_threshold:.3f}."
+    )
+
+
+def _deepfake_reason_text(
+    *,
+    deepfake_score: float,
+) -> str:
+    current_score = _percent_text(deepfake_score)
+    high_line = _percent_text(DEEPFAKE_HIGH_THRESHOLD)
+    if deepfake_score > DEEPFAKE_HIGH_THRESHOLD:
+        return (
+            f"Deepfake score {current_score} is above the review line {high_line} "
+            "and should be checked carefully."
+        )
+    return f"Deepfake score {current_score} stays below the alert line {high_line}."
+
+
+def _match_reason_text(
+    *,
+    label: str,
+    ok: bool,
+    score: float,
+    pass_threshold: float,
+    reject_threshold: float | None = None,
+) -> str:
+    subject = f"ID vs {label}"
+    pass_line = _percent_text(pass_threshold)
+    if not ok:
+        return (
+            f"{subject} could not be verified from the current inputs, so staff should treat "
+            "this identity evidence as unavailable."
+        )
+    current_score = _percent_text(score)
+    if reject_threshold is not None:
+        reject_line = _percent_text(reject_threshold)
+        if score < reject_threshold:
+            return (
+                f"{subject} match probability {current_score} is below the reject line {reject_line}, "
+                "so this branch treats the identity evidence as a mismatch."
+            )
+        if score < pass_threshold:
+            return (
+                f"{subject} match probability {current_score} falls between the reject line {reject_line} "
+                f"and the pass line {pass_line}, so this branch stays in REVIEW."
+            )
+    if score < pass_threshold:
+        return (
+            f"{subject} match probability {current_score} is below the pass line {pass_line}, "
+            "so the same-person evidence is weak."
+        )
+    return (
+        f"{subject} match probability {current_score} is above the pass line {pass_line} "
+        "and supports the same identity."
+    )
+
+
+def _sync_flag_names(sync_quality: Mapping[str, object] | None) -> list[str]:
+    if not isinstance(sync_quality, Mapping):
+        return []
+    flag_labels = {
+        "mismatch": "mismatch",
+        "interpolated": "interpolated",
+        "length_bad": "length bad",
+    }
+    flags: list[str] = []
+    for key, label in flag_labels.items():
+        if _coerce_bool(sync_quality.get(key)):
+            flags.append(label)
+    return flags
+
+
+def _sync_reason_text(sync_flags: list[str]) -> str:
+    if not sync_flags:
+        return "No sync quality warning was triggered."
+    return (
+        f"Sync evidence is marked low confidence ({', '.join(sync_flags)}). "
+        "Staff should review lip-audio consistency manually."
+    )
+
+
+def _final_decision_reason_text(
+    *,
+    decision: str,
+    risk: float,
+    pass_threshold: float,
+    reject_threshold: float,
+    sync_low_confidence: bool,
+) -> str:
+    normalized = str(decision).strip().upper()
+    if normalized == "PASS":
+        return (
+            f"Raw risk {risk:.3f} is below the pass threshold {pass_threshold:.3f}, "
+            "so the system keeps the sample in PASS."
+        )
+    if normalized == "REVIEW":
+        if sync_low_confidence:
+            return (
+                f"Raw risk {risk:.3f} is not enough for a final reject, and sync quality is low confidence, "
+                "so the system keeps the sample in REVIEW for manual checking."
+            )
+        return (
+            f"Raw risk {risk:.3f} falls in the medium-risk band between {pass_threshold:.3f} "
+            f"and {reject_threshold:.3f}, so the system returns REVIEW."
+        )
+    return (
+        f"Raw risk {risk:.3f} meets or exceeds the reject threshold {reject_threshold:.3f}, "
+        "so the system returns REJECT."
+    )
 
 
 def _extract_sync_quality(result: dict[str, object]) -> dict[str, object]:

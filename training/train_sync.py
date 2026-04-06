@@ -67,6 +67,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-frames", type=int, default=16, help="Fixed number of frames after trim/pad.")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--save-path", type=Path, default=Path("sync_module.pt"), help="Checkpoint output path.")
+    parser.add_argument(
+        "--metrics-log-path",
+        type=Path,
+        default=None,
+        help="Optional text file used to record per-epoch validation metrics.",
+    )
     parser.add_argument("--args-json", type=Path, default=None, help="Optional path to save effective arguments as JSON.")
     parser.add_argument("--amp", action="store_true", help="Enable torch.cuda.amp mixed precision.")
     parser.add_argument("--vit-cache-dir", type=Path, default=None, help="Directory to cache/load ViT frame embeddings.")
@@ -134,6 +140,32 @@ def maybe_dump_args(args: argparse.Namespace) -> None:
             payload[key] = value
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
+
+
+def resolve_metrics_log_path(save_path: Path, metrics_log_path: Path | None) -> Path:
+    if metrics_log_path is not None:
+        return metrics_log_path
+    return save_path.with_name(f"{save_path.stem}_epoch_metrics.log")
+
+
+def initialize_metrics_log(path: Path, args: argparse.Namespace) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        handle.write("# Sync training epoch metrics\n")
+        handle.write(f"# save_path={args.save_path}\n")
+
+
+def append_metrics_log(path: Path, line: str) -> None:
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line.rstrip() + "\n")
+
+
+def format_epoch_metrics_line(epoch: int, loss: float, metrics: Dict[str, float]) -> str:
+    return (
+        f"Epoch {epoch}: val_loss={loss:.4f}, val_mcc={metrics.get('mcc', 0.0):.4f}, "
+        f"val_eer={metrics.get('eer', 0.5):.4f}, TP={metrics.get('tp', 0.0):.0f}, "
+        f"FP={metrics.get('fp', 0.0):.0f}, TN={metrics.get('tn', 0.0):.0f}, FN={metrics.get('fn', 0.0):.0f}"
+    )
 
 
 def create_grad_scaler(device: torch.device, use_amp: bool):
@@ -371,7 +403,7 @@ def evaluate(
     else:
         eer = 0.5
     mcc = compute_mcc(tp, fp, tn, fn)
-    metrics = {"eer": eer, "mcc": mcc}
+    metrics = {"eer": eer, "mcc": mcc, "tp": tp, "fp": fp, "tn": tn, "fn": fn}
     return avg_loss, accuracy, metrics
 
 
@@ -379,6 +411,9 @@ def train() -> None:
     args = parse_args()
     maybe_dump_args(args)
     device = torch.device(args.device)
+    metrics_log_path = resolve_metrics_log_path(args.save_path, args.metrics_log_path)
+    initialize_metrics_log(metrics_log_path, args)
+    print(f"Per-epoch validation metrics will be written to {metrics_log_path}")
     cache_dir = Path(args.vit_cache_dir) if args.vit_cache_dir else None
     cache_enabled = cache_dir is not None
     vit_unfreeze_layers = max(int(args.vit_unfreeze_layers), 0)
@@ -491,15 +526,9 @@ def train() -> None:
             cache_dtype=args.cache_dtype,
         )
         val_eer = val_metrics.get("eer", float("inf"))
-        tqdm.write(
-            "Epoch {epoch}: val_loss={loss:.4f}, val_acc={acc:.2f}%, val_mcc={mcc:.4f}, val_eer={eer:.4f}".format(
-                epoch=epoch,
-                loss=val_loss,
-                acc=val_acc * 100,
-                mcc=val_metrics.get("mcc", 0.0),
-                eer=val_metrics.get("eer", 0.5),
-            )
-        )
+        val_line = format_epoch_metrics_line(epoch, val_loss, val_metrics)
+        tqdm.write(val_line)
+        append_metrics_log(metrics_log_path, val_line)
 
         if val_eer < best_val_eer:
             best_val_eer = val_eer
@@ -511,6 +540,13 @@ def train() -> None:
                     "epoch": epoch,
                     "val_eer": val_eer,
                     "val_acc": val_acc,
+                    "val_mcc": val_metrics.get("mcc", 0.0),
+                    "val_stats": {
+                        "tp": val_metrics.get("tp", 0.0),
+                        "fp": val_metrics.get("fp", 0.0),
+                        "tn": val_metrics.get("tn", 0.0),
+                        "fn": val_metrics.get("fn", 0.0),
+                    },
                     "args": vars(args),
                 },
                 args.save_path,

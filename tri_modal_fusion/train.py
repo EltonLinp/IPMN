@@ -4,8 +4,13 @@ import argparse
 import json
 import math
 import random
+import sys
 from pathlib import Path
 from typing import Dict, Optional, Tuple
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
 
 import torch
 import torch.nn.functional as F
@@ -43,6 +48,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-dir", type=Path, default=None, help="Directory containing processed .pt bundles.")
     parser.add_argument("--index-file", type=Path, default=None, help="Optional preprocess_index.jsonl path.")
     parser.add_argument("--save-path", type=Path, default=Path("tri_modal_fusion.pt"), help="Checkpoint output path.")
+    parser.add_argument(
+        "--metrics-log-path",
+        type=Path,
+        default=None,
+        help="Optional text file used to record per-epoch validation metrics.",
+    )
     parser.add_argument("--epochs", type=int, default=24, help="Training epochs.")
     parser.add_argument("--batch-size", type=int, default=6, help="Batch size per GPU.")
     parser.add_argument("--accumulation-steps", type=int, default=1, help="Gradient accumulation steps.")
@@ -154,6 +165,71 @@ def compute_eer(scores: torch.Tensor, labels: torch.Tensor) -> float:
     idx = torch.argmin(diff)
     eer = 0.5 * (fpr[idx] + fnr[idx])
     return float(eer.item())
+
+
+def compute_mcc(tp: float, fp: float, tn: float, fn: float) -> float:
+    numerator = (tp * tn) - (fp * fn)
+    denom = math.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+    if denom == 0:
+        return 0.0
+    return float(numerator / denom)
+
+
+def resolve_metrics_log_path(save_path: Path, metrics_log_path: Path | None) -> Path:
+    if metrics_log_path is not None:
+        return metrics_log_path
+    return save_path.with_name(f"{save_path.stem}_epoch_metrics.log")
+
+
+def initialize_metrics_log(path: Path, args: argparse.Namespace) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        handle.write("# Tri-modal fusion epoch metrics\n")
+        handle.write(f"# save_path={args.save_path}\n")
+
+
+def append_metrics_log(path: Path, line: str) -> None:
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line.rstrip() + "\n")
+
+
+def format_val_metrics_line(epoch: int, metrics: Dict[str, float]) -> str:
+    return (
+        f"Epoch {epoch}: val_loss={metrics.get('final_loss', 0.0):.4f}, "
+        f"val_mcc={metrics.get('final_mcc', 0.0):.4f}, "
+        f"val_eer={metrics.get('final_eer', 0.5):.4f}, "
+        f"TP={metrics.get('final_tp', 0.0):.0f}, FP={metrics.get('final_fp', 0.0):.0f}, "
+        f"TN={metrics.get('final_tn', 0.0):.0f}, FN={metrics.get('final_fn', 0.0):.0f}"
+    )
+
+
+def load_label_counts(dataset: FakeAVTriModalDataset) -> Dict[int, int]:
+    counts: Dict[int, int] = {0: 0, 1: 0}
+    record_index = getattr(dataset, "_record_index", {})
+    for path in dataset.files:
+        record = record_index.get(path.name) if isinstance(record_index, dict) else None
+        if record is not None and record.get("label") is not None:
+            label = int(record.get("label", 0))
+        else:
+            bundle = torch.load(path, map_location="cpu")
+            label = int(bundle.get("label", 0))
+        counts[label] = counts.get(label, 0) + 1
+    return counts
+
+
+def build_deepfake_class_weights(
+    dataset: FakeAVTriModalDataset,
+    device: torch.device,
+) -> torch.Tensor:
+    counts = load_label_counts(dataset)
+    total = float(sum(counts.values()))
+    weight_real = total / max(float(counts.get(0, 0)), 1.0)
+    weight_fake = total / max(float(counts.get(1, 0)), 1.0)
+    print(
+        f"Tri-modal train label counts: {counts}, "
+        f"class weights (real/fake): [{weight_real:.2f}, {weight_fake:.2f}]"
+    )
+    return torch.tensor([weight_real, weight_fake], dtype=torch.float32, device=device)
 
 
 def build_dataloaders(args: argparse.Namespace) -> Tuple[DataLoader, DataLoader]:
@@ -362,10 +438,14 @@ def run_eval(
     loader: DataLoader,
     device: torch.device,
     use_amp: bool,
+    criterion: torch.nn.Module,
 ) -> Dict[str, float]:
     model.eval()
-    all_scores = {"final": [], "audio": [], "video": [], "sync": []}
+    all_scores = []
+    all_preds = []
     all_labels = []
+    total_final_loss = 0.0
+    total_samples = 0
     with torch.no_grad():
         for batch in loader:
             batch = move_batch_to_device(batch, device)
@@ -378,21 +458,31 @@ def run_eval(
                     video=batch["video"],
                     video_sync=video_sync,
                 )
-            for key, scores in [
-                ("final", outputs["logits"]),
-                ("audio", outputs["audio_logits"]),
-                ("video", outputs["video_logits"]),
-                ("sync", outputs["sync_logits"]),
-            ]:
-                probs = torch.softmax(scores, dim=1)[:, 1]
-                all_scores[key].append(probs.detach().cpu())
-            all_labels.append(batch["label"].detach().cpu())
+                final_loss = criterion(outputs["logits"], batch["label"])
+            labels = batch["label"]
+            total_final_loss += final_loss.item() * labels.size(0)
+            total_samples += labels.size(0)
+            probs = torch.softmax(outputs["logits"], dim=1)[:, 1]
+            preds = outputs["logits"].argmax(dim=1)
+            all_scores.append(probs.detach().cpu())
+            all_preds.append(preds.detach().cpu())
+            all_labels.append(labels.detach().cpu())
     results = {}
     labels = torch.cat(all_labels, dim=0)
-    for key, tensors in all_scores.items():
-        if tensors:
-            scores = torch.cat(tensors, dim=0)
-            results[f"{key}_eer"] = compute_eer(scores, labels)
+    results["final_loss"] = total_final_loss / max(total_samples, 1)
+    if all_scores:
+        scores = torch.cat(all_scores, dim=0)
+        preds = torch.cat(all_preds, dim=0)
+        results["final_eer"] = compute_eer(scores, labels)
+        tp = ((preds == 1) & (labels == 1)).sum().item()
+        fp = ((preds == 1) & (labels == 0)).sum().item()
+        tn = ((preds == 0) & (labels == 0)).sum().item()
+        fn = ((preds == 0) & (labels == 1)).sum().item()
+        results["final_tp"] = float(tp)
+        results["final_fp"] = float(fp)
+        results["final_tn"] = float(tn)
+        results["final_fn"] = float(fn)
+        results["final_mcc"] = compute_mcc(tp, fp, tn, fn)
     return results
 
 
@@ -441,6 +531,7 @@ def save_checkpoint(
     scaler: Optional[GradScaler],
     epoch: int,
     best_eer: float,
+    best_metrics: Dict[str, float],
     args: argparse.Namespace,
     ema: Optional[ModelEMA],
 ) -> None:
@@ -450,6 +541,7 @@ def save_checkpoint(
         "scaler_state": scaler.state_dict() if scaler is not None else None,
         "epoch": epoch,
         "best_eer": best_eer,
+        "best_metrics": best_metrics,
         "args": vars(args),
         "ema": ema.state_dict() if ema is not None else None,
     }
@@ -463,7 +555,7 @@ def load_checkpoint(
     optimizer: optim.Optimizer,
     scaler: Optional[GradScaler],
     ema: Optional[ModelEMA],
-) -> Tuple[int, float]:
+) -> Tuple[int, float, Dict[str, float]]:
     state = torch.load(path, map_location="cpu")
     model.load_state_dict(state["model_state"])
     optimizer.load_state_dict(state["optimizer_state"])
@@ -471,23 +563,30 @@ def load_checkpoint(
         scaler.load_state_dict(state["scaler_state"])
     if ema is not None and state.get("ema"):
         ema.shadow = state["ema"]
-    return state.get("epoch", 0), state.get("best_eer", math.inf)
+    return state.get("epoch", 0), state.get("best_eer", math.inf), state.get("best_metrics", {})
 
 
 def train() -> None:
     args = parse_args()
     set_seed(args.seed)
     device = torch.device(args.device)
+    metrics_log_path = resolve_metrics_log_path(args.save_path, args.metrics_log_path)
+    initialize_metrics_log(metrics_log_path, args)
+    print(f"Per-epoch validation metrics will be written to {metrics_log_path}")
     train_loader, val_loader = build_dataloaders(args)
     model = build_model(args).to(device)
+    deepfake_class_weights = build_deepfake_class_weights(train_loader.dataset, device)
+    deepfake_criterion = torch.nn.CrossEntropyLoss(weight=deepfake_class_weights)
+    sync_criterion = torch.nn.CrossEntropyLoss()
     optimizer = build_optimizer(model, args)
     scheduler = build_scheduler(optimizer, args)
     scaler = GradScaler("cuda", enabled=args.amp)
     ema = ModelEMA(model, decay=args.ema_decay) if args.use_ema else None
     start_epoch = 1
     best_eer = math.inf
+    best_metrics: Dict[str, float] = {}
     if args.resume and Path(args.resume).exists():
-        start_epoch, best_eer = load_checkpoint(Path(args.resume), model, optimizer, scaler, ema)
+        start_epoch, best_eer, best_metrics = load_checkpoint(Path(args.resume), model, optimizer, scaler, ema)
         start_epoch += 1
     teacher_audio = maybe_build_teacher("audio", args, model, device)
     teacher_video = maybe_build_teacher("video", args, model, device)
@@ -512,10 +611,10 @@ def train() -> None:
                     video=batch["video"],
                     video_sync=video_sync,
                 )
-                loss_main = F.cross_entropy(outputs["logits"], batch["label"])
-                aux_audio = F.cross_entropy(outputs["audio_logits"], batch["label"])
-                aux_video = F.cross_entropy(outputs["video_logits"], batch["label"])
-                aux_sync = F.cross_entropy(outputs["sync_logits"], batch["label"])
+                loss_main = deepfake_criterion(outputs["logits"], batch["label"])
+                aux_audio = deepfake_criterion(outputs["audio_logits"], batch["label"])
+                aux_video = deepfake_criterion(outputs["video_logits"], batch["label"])
+                aux_sync = sync_criterion(outputs["sync_logits"], batch["sync_label"])
                 align = alignment_loss(
                     outputs["sync_embedding"],
                     outputs["audio_embedding"],
@@ -581,19 +680,30 @@ def train() -> None:
                 ema_model.load_state_dict(model.state_dict())
                 ema.copy_to(ema_model)
                 eval_model = ema_model
-            metrics = run_eval(eval_model, val_loader, device, args.amp)
+            metrics = run_eval(eval_model, val_loader, device, args.amp, deepfake_criterion)
             final_eer = metrics.get("final_eer", math.inf)
-            print(
-                f"[Val] Epoch {epoch} EER final={final_eer:.4f} "
-                f"audio={metrics.get('audio_eer', 0):.4f} "
-                f"video={metrics.get('video_eer', 0):.4f} "
-                f"sync={metrics.get('sync_eer', 0):.4f}"
-            )
+            val_line = format_val_metrics_line(epoch, metrics)
+            print(val_line)
+            append_metrics_log(metrics_log_path, val_line)
             if scheduler is not None and args.scheduler == "plateau":
                 scheduler.step(final_eer)
             if final_eer < best_eer:
                 best_eer = final_eer
-                save_checkpoint(args.save_path, model, optimizer, scaler, epoch, best_eer, args, ema)
+                best_metrics = dict(metrics)
+                save_checkpoint(args.save_path, model, optimizer, scaler, epoch, best_eer, best_metrics, args, ema)
+                print(f"Saved new best model to {args.save_path}")
+                append_metrics_log(metrics_log_path, f"Saved new best model to {args.save_path}")
+
+    if best_metrics:
+        best_line = (
+            f"Best val: loss={best_metrics.get('final_loss', 0.0):.4f}, "
+            f"mcc={best_metrics.get('final_mcc', 0.0):.4f}, "
+            f"eer={best_metrics.get('final_eer', math.inf):.4f}, "
+            f"TP={best_metrics.get('final_tp', 0.0):.0f}, FP={best_metrics.get('final_fp', 0.0):.0f}, "
+            f"TN={best_metrics.get('final_tn', 0.0):.0f}, FN={best_metrics.get('final_fn', 0.0):.0f}"
+        )
+        print(best_line)
+        append_metrics_log(metrics_log_path, best_line)
 
 
 if __name__ == "__main__":

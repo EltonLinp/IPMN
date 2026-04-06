@@ -14,7 +14,7 @@
           <p class="eyebrow">Tri-Modal Detector</p>
           <h1>Multi-Modal Deepfake Detection</h1>
           <p class="subtitle">
-            Upload a short local clip (with audio). The service extracts audio / visual / audio-visual sync features and a fused prediction to expose deepfake evidence in three modalities plus the final verdict.
+            Upload an ID photo, a selfie, and a short local clip with audio. The service runs document screening, face matching, and calibrated tri-modal deepfake analysis to produce a single eKYC decision.
           </p>
         </div>
         <div class="status-pill" id="status-pill">Waiting for upload</div>
@@ -105,118 +105,30 @@
         </div>
       </section>
 
-      <section class="results-panel">
-        <div class="results-header">
-          <div>
-            <p class="eyebrow">Analysis</p>
-            <h2>Modal Alerts &amp; Fusion Verdict</h2>
-          </div>
-          <div class="summary-chip" id="summary-chip">Awaiting analysis</div>
-        </div>
-        <p class="results-note">
-          Each modality card reflects a standalone branch and is for reference only. The fusion score combines all evidence and represents the final decision.
-        </p>
-        <div class="viz-row">
-          <article class="chart-card" id="fusion-card">
-            <div class="chart-header">
-              <p class="eyebrow">Fusion Confidence</p>
-              <h3>Final Verdict Gauge</h3>
-            </div>
-            <div class="gauge-wrapper">
-              <canvas id="fusion-gauge" aria-label="Fusion gauge chart"></canvas>
-              <div class="gauge-center" id="gauge-center">
-                <p class="gauge-label" id="gauge-label">Awaiting</p>
-                <p class="gauge-score" id="gauge-score">--%</p>
-              </div>
-            </div>
-            <p class="chart-caption">Relative fake vs real probability from the fusion branch.</p>
-          </article>
-          <article class="chart-card">
-            <div class="chart-header">
-              <p class="eyebrow">Modality Contrast</p>
-              <h3>Fake vs Real</h3>
-            </div>
-            <div id="contrast-bars" class="bar-group">
-              <div class="bar-row" data-bar-key="audio">
-                <span class="bar-label">Audio</span>
-                <div class="bar-track">
-                  <div class="bar-segment real"></div>
-                  <div class="bar-segment fake"></div>
-                  <div class="bar-threshold"></div>
-                </div>
-                <div class="bar-values">
-                  <span data-real-value>Real --%</span>
-                  <span data-fake-value>Fake --%</span>
-                </div>
-              </div>
-              <div class="bar-row" data-bar-key="video">
-                <span class="bar-label">Video</span>
-                <div class="bar-track">
-                  <div class="bar-segment real"></div>
-                  <div class="bar-segment fake"></div>
-                  <div class="bar-threshold"></div>
-                </div>
-                <div class="bar-values">
-                  <span data-real-value>Real --%</span>
-                  <span data-fake-value>Fake --%</span>
-                </div>
-              </div>
-              <div class="bar-row" data-bar-key="sync">
-                <span class="bar-label">Synchronization</span>
-                <div class="bar-track">
-                  <div class="bar-segment real"></div>
-                  <div class="bar-segment fake"></div>
-                  <div class="bar-threshold"></div>
-                </div>
-                <div class="bar-values">
-                  <span data-real-value>Real --%</span>
-                  <span data-fake-value>Fake --%</span>
-                </div>
-              </div>
-            </div>
-            <p class="chart-caption">Shows how each branch leans toward real or fake; the dashed line marks 50%.</p>
-          </article>
-        </div>
-        <div class="grid" id="result-grid">
-          <article class="metric-card" data-key="final">
-            <h3>Fusion Verdict</h3>
-            <p class="metric-label" data-role="label">--</p>
-            <p class="metric-score" data-role="score">--</p>
-            <p class="metric-detail" data-role="detail">Waiting for analysis</p>
-          </article>
-          <article class="metric-card" data-key="audio">
-            <h3>Audio Branch</h3>
-            <p class="metric-label" data-role="label">--</p>
-            <p class="metric-score" data-role="score">--</p>
-            <p class="metric-detail" data-role="detail">Waiting for analysis</p>
-          </article>
-          <article class="metric-card" data-key="video">
-            <h3>Video Branch</h3>
-            <p class="metric-label" data-role="label">--</p>
-            <p class="metric-score" data-role="score">--</p>
-            <p class="metric-detail" data-role="detail">Waiting for analysis</p>
-          </article>
-          <article class="metric-card" data-key="sync">
-            <h3>Synchronization Branch</h3>
-            <p class="metric-label" data-role="label">--</p>
-            <p class="metric-score" data-role="score">--</p>
-            <p class="metric-detail" data-role="detail">Waiting for analysis</p>
-          </article>
-        </div>
-      </section>
-
       <section class="results-panel" id="ekyc-panel">
         <div class="results-header">
           <div>
             <p class="eyebrow">eKYC</p>
-            <h2>Evaluation Results</h2>
+            <h2>Unified Evaluation Results</h2>
           </div>
           <div class="summary-chip" id="ekycDecisionChip">Pending</div>
         </div>
         <p class="results-note">
-          Upload ID, selfie, and a short video clip to run the unified eKYC evaluation.
+          This panel is the only final result view. It summarizes document quality, calibrated tri-modal deepfake score, face matching, and the final PASS / REVIEW / REJECT decision.
         </p>
         <p class="error" id="ekycError" role="alert" hidden></p>
+        <article class="metric-card document-check-card" style="margin-bottom: 1rem;">
+          <div class="document-check-header">
+            <div>
+              <h3>ID Document Check</h3>
+              <p class="metric-label" id="idDocumentStatus">--</p>
+            </div>
+            <span class="document-risk-pill" id="idDocumentRiskLevel">--</span>
+          </div>
+          <p class="metric-detail" id="idDocumentSummary">Awaiting evaluation</p>
+          <p class="document-reupload-banner" id="idDocumentReupload" hidden></p>
+          <div class="document-issue-grid" id="idDocumentIssues"></div>
+        </article>
         <div class="grid">
           <article class="metric-card image-card">
             <h3>Uploaded Video</h3>
@@ -251,7 +163,7 @@
             <div class="bar-track">
               <div class="bar-segment fake" id="scoreDeepfakeBar"></div>
             </div>
-            <p class="metric-detail">Fake probability from model</p>
+            <p class="metric-detail" id="scoreDeepfakeMeta">Calibrated tri-modal fake score</p>
           </article>
           <article class="metric-card">
             <h3>ID vs Selfie</h3>
@@ -259,7 +171,7 @@
             <div class="bar-track">
               <div class="bar-segment real" id="scoreIdSelfieBar"></div>
             </div>
-            <p class="metric-detail">Cosine similarity</p>
+            <p class="metric-detail" id="scoreIdSelfieMeta">Match probability</p>
           </article>
           <article class="metric-card">
             <h3>ID vs Video</h3>
@@ -267,22 +179,25 @@
             <div class="bar-track">
               <div class="bar-segment real" id="scoreIdVideoBar"></div>
             </div>
-            <p class="metric-detail">Cosine similarity</p>
+            <p class="metric-detail" id="scoreIdVideoMeta">Match probability</p>
+          </article>
+          <article class="metric-card">
+            <h3>Fusion Threshold</h3>
+            <p class="metric-score" id="scoreFusionThreshold">--</p>
+            <p class="metric-detail" id="scoreFusionStrategy">Awaiting evaluation</p>
+            <p class="metric-detail" id="scoreFusionWeights">Weights: --</p>
           </article>
         </div>
         <article class="metric-card" style="margin-top: 1rem;">
           <h3>Decision</h3>
           <p class="metric-label" id="ekycDecision">--</p>
+          <p class="metric-detail decision-summary" id="ekycDecisionSummary">Awaiting evaluation</p>
+          <p class="metric-detail" id="ekycDecisionMeta">Threshold and risk details will appear here after evaluation.</p>
+          <p class="explain-label">Triggered reasons</p>
           <ul id="ekycReasons"></ul>
         </article>
         <article class="metric-card explainability-card" style="margin-top: 1rem;">
-          <h3>Deepfake Explainability</h3>
-          <div class="explain-row">
-            <p class="explain-label">Decision reason codes</p>
-            <div class="badge-list" id="ekycDecisionReasonCodes">
-              <span class="ekyc-badge muted">None</span>
-            </div>
-          </div>
+          <h3>Model Signals</h3>
           <div class="explain-row">
             <p class="explain-label">Deepfake quality flags</p>
             <div class="badge-list" id="ekycQualityFlags">

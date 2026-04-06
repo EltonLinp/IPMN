@@ -48,6 +48,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-steps", type=int, default=400, help="Temporal length of Mel spectrograms after pad/crop.")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device to use.")
     parser.add_argument("--save-path", type=Path, default=Path("aasist_lite_audio.pt"), help="Model checkpoint path.")
+    parser.add_argument(
+        "--metrics-log-path",
+        type=Path,
+        default=None,
+        help="Optional text file used to record per-epoch validation metrics.",
+    )
     parser.add_argument("--balanced-sampler", action="store_true", help="Use class-balanced sampling for the training loader.")
     parser.add_argument("--class-weights", action="store_true", help="Apply class-weighted loss.")
     parser.add_argument("--verify-dataset", action="store_true", help="Validate processed samples before training.")
@@ -1319,6 +1325,46 @@ def compute_eer(scores: torch.Tensor, labels: torch.Tensor) -> float:
     return float(eer.item())
 
 
+def compute_mcc(tp: float, fp: float, tn: float, fn: float) -> float:
+    numerator = (tp * tn) - (fp * fn)
+    denom = math.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+    if denom == 0:
+        return 0.0
+    return float(numerator / denom)
+
+
+def resolve_metrics_log_path(save_path: Path, metrics_log_path: Path | None) -> Path:
+    if metrics_log_path is not None:
+        return metrics_log_path
+    return save_path.with_name(f"{save_path.stem}_epoch_metrics.log")
+
+
+def initialize_metrics_log(path: Path, args: argparse.Namespace) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        handle.write("# Audio training epoch metrics\n")
+        handle.write(f"# save_path={args.save_path}\n")
+
+
+def append_metrics_log(path: Path, line: str) -> None:
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line.rstrip() + "\n")
+
+
+def format_epoch_metrics_line(epoch: int, loss: float, mcc: float, eer: float, stats: Dict[str, float]) -> str:
+    return (
+        f"Epoch {epoch}: val_loss={loss:.4f}, val_mcc={mcc:.4f}, val_eer={eer:.4f}, "
+        f"TP={stats['tp']:.0f}, FP={stats['fp']:.0f}, TN={stats['tn']:.0f}, FN={stats['fn']:.0f}"
+    )
+
+
+def format_split_metrics_line(split: str, loss: float, mcc: float, eer: float, stats: Dict[str, float]) -> str:
+    return (
+        f"{split}: loss={loss:.4f}, mcc={mcc:.4f}, eer={eer:.4f}, "
+        f"TP={stats['tp']:.0f}, FP={stats['fp']:.0f}, TN={stats['tn']:.0f}, FN={stats['fn']:.0f}"
+    )
+
+
 class FocalLoss(nn.Module):
     def __init__(self, gamma: float = 2.0, weight: torch.Tensor | None = None) -> None:
         super().__init__()
@@ -1646,6 +1692,9 @@ def train() -> None:
         print("CUDA unavailable; switching device to CPU.")
         args.device = "cpu"
     device = torch.device(args.device)
+    metrics_log_path = resolve_metrics_log_path(args.save_path, args.metrics_log_path)
+    initialize_metrics_log(metrics_log_path, args)
+    print(f"Per-epoch validation metrics will be written to {metrics_log_path}")
 
     audio_backbone = args.audio_backbone.lower()
     wave_branch_mode = args.wave_branch_mode
@@ -2259,10 +2308,10 @@ def train() -> None:
             sync_audio_dim=sync_audio_dim,
         )
         val_loss_value = val_loss
-        tqdm.write(
-            f"Epoch {epoch}: val_loss={val_loss:.4f}, val_eer={val_eer:.4f}, "
-            f"TP={val_stats['tp']:.0f}, FP={val_stats['fp']:.0f}, TN={val_stats['tn']:.0f}, FN={val_stats['fn']:.0f}"
-        )
+        val_mcc = compute_mcc(val_stats["tp"], val_stats["fp"], val_stats["tn"], val_stats["fn"])
+        val_line = format_epoch_metrics_line(epoch, val_loss, val_mcc, val_eer, val_stats)
+        tqdm.write(val_line)
+        append_metrics_log(metrics_log_path, val_line)
         if sync_model is not None and sync_prev_mode is not None:
             sync_model.train(sync_prev_mode)
 
@@ -2279,6 +2328,8 @@ def train() -> None:
                 "optimizer_state": optimizer.state_dict(),
                 "epoch": epoch,
                 "val_eer": val_eer,
+                "val_mcc": val_mcc,
+                "val_stats": val_stats,
                 "args": vars(args),
             }
             if arcface_head is not None:
@@ -2382,18 +2433,18 @@ def train() -> None:
         sync_target_frames=sync_target_frames,
         sync_audio_dim=sync_audio_dim,
     )
-    print(
-        f"Train loss={train_loss:.4f}, eer={train_eer:.4f}, "
-        f"TP={train_stats['tp']:.0f}, FP={train_stats['fp']:.0f}, TN={train_stats['tn']:.0f}, FN={train_stats['fn']:.0f}"
-    )
-    print(
-        f"Val loss={val_loss:.4f}, eer={val_eer:.4f}, "
-        f"TP={val_stats['tp']:.0f}, FP={val_stats['fp']:.0f}, TN={val_stats['tn']:.0f}, FN={val_stats['fn']:.0f}"
-    )
-    print(
-        f"Test loss={test_loss:.4f}, eer={test_eer:.4f}, "
-        f"TP={test_stats['tp']:.0f}, FP={test_stats['fp']:.0f}, TN={test_stats['tn']:.0f}, FN={test_stats['fn']:.0f}"
-    )
+    train_mcc = compute_mcc(train_stats["tp"], train_stats["fp"], train_stats["tn"], train_stats["fn"])
+    val_mcc = compute_mcc(val_stats["tp"], val_stats["fp"], val_stats["tn"], val_stats["fn"])
+    test_mcc = compute_mcc(test_stats["tp"], test_stats["fp"], test_stats["tn"], test_stats["fn"])
+    train_line = format_split_metrics_line("Train", train_loss, train_mcc, train_eer, train_stats)
+    val_line = format_split_metrics_line("Val", val_loss, val_mcc, val_eer, val_stats)
+    test_line = format_split_metrics_line("Test", test_loss, test_mcc, test_eer, test_stats)
+    print(train_line)
+    print(val_line)
+    print(test_line)
+    append_metrics_log(metrics_log_path, train_line)
+    append_metrics_log(metrics_log_path, val_line)
+    append_metrics_log(metrics_log_path, test_line)
 
 
 if __name__ == "__main__":

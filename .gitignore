@@ -43,6 +43,15 @@ Thumbs.db
 *.pid
 env.ps1
 temp_patch.txt
+overleaf_weight_calibration.txt
+FINAL_MODEL_LOG_REPORT.md
+docs/FINAL_PRE_CONTENT_PAGES.md
+docs/FINAL_PRE_SLIDE_OUTLINE.md
+docs/SUPERVISOR_EVAL_REPORT.md
+docs/TEACHER_FEEDBACK_STATUS.md
+scripts/calibrate_identity_match_thresholds.py
+scripts/export_term2_trimodal_csv.py
+scripts/plot_eval_diagnostics.py
 
 # Model weights / checkpoints / inference binaries
 *.pt
@@ -88,6 +97,10 @@ userVisualization/storage/
 FakeAVCeleb_v1.2/
 vit_model/
 term2/
+wavlm_base_plus_sv_snapshot/
+
+# Local upload bundles / release mirrors
+cloud_upload_root_mainline_only/
 
 # Third-party source snapshots (optional; keep off GitHub by default)
 aasist-main/
